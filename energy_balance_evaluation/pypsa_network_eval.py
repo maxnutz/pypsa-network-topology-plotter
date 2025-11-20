@@ -35,7 +35,10 @@ class CarrierNetwork(CarriersNetwork):
 
 
 def eval_all_networks(
-    n: pypsa.Network, png_outputfolder_path: str, eval_one_node: bool = True
+    n: pypsa.Network,
+    png_outputfolder_path: str,
+    eval_one_node: bool = True,
+    return_mermaid_code: bool = False,
 ):
     """
     Evaluates all carriers in a given pypsa.Network object.
@@ -48,6 +51,8 @@ def eval_all_networks(
         The path where the subnetwork plots should be saved.
     eval_one_node : bool, optional
         Whether to reduce the network to one node. Defaults to True.
+    return_mermaid_code : bool, optional
+        Whether to return the mermaid code as text. Defaults to False.
 
     Returns:
     ---
@@ -65,6 +70,7 @@ def eval_all_networks(
                     n,
                     eval_one_node=eval_one_node,
                     png_outputfolder_path=png_outputfolder_path,
+                    return_mermaid_code=return_mermaid_code,
                 )
             except:
                 error_carriers.append(carrier)

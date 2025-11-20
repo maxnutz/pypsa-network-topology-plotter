@@ -552,7 +552,7 @@ class CarriersNetwork:
         mermaid_code.append(
             [
                 index.replace(" ", "_")
-                + "("
+                + "(LOAD "
                 + index
                 + ") === "
                 + "BUS_"
@@ -565,7 +565,7 @@ class CarriersNetwork:
         mermaid_code.append(
             [
                 index.replace(" ", "_")
-                + "("
+                + "(STORAGE_UNIT"
                 + index
                 + ") === "
                 + "BUS_"
@@ -706,9 +706,10 @@ class CarriersNetwork:
         file is saved as jpg with carriers name
         """
         mermaid_code_list = self.mermaid_carriers_network()
-        mermaid_code = "flowchart LR;\n  " + "\n  ".join(
-            [string for submermaid in mermaid_code_list for string in submermaid]
+        mermaid_code_list = list(
+            set([string for submermaid in mermaid_code_list for string in submermaid])
         )
+        mermaid_code = "flowchart LR;\n  " + "\n  ".join(mermaid_code_list)
         self.create_mermaid_output(
             f"""{mermaid_code}""", folderpath, return_mermaid_code
         )
