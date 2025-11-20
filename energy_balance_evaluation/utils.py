@@ -484,9 +484,10 @@ class CarriersNetwork:
         if not stores_carrier.equals(
             self.n.stores[self.n.stores.bus.isin(self.buses.index)]
         ):
-            raise Warning(
+            print(
                 "Stores must have the same carrier as the bus they are attached to but got different dataframes."
             )
+            return self.n.stores[self.n.stores.bus.isin(self.buses.index)]
         return stores_carrier
 
     def get_storage_units(self):
@@ -506,9 +507,10 @@ class CarriersNetwork:
         if not storage_units_carrier.equals(
             self.n.storage_units[self.n.storage_units.bus.isin(self.buses.index)]
         ):
-            raise Warning(
+            print(
                 "Storage units must have the same carrier as the bus they are attached to but got different dataframes."
             )
+            return self.n.storage_units[self.n.storage_units.bus.isin(self.buses.index)]
         return storage_units_carrier
 
     def get_all_processes(self):
