@@ -75,7 +75,7 @@ class EnergyBalanceAT:
         df_eb.loc[1, "layer_0"] = "Total absolute values"
         if self.original_input:
             df_eb.dropna(axis="columns", how="all", inplace=True)
-        # Standardize column names by replacing spaces with underscores and whitspaces
+        # Standardize column names by replacing spaces with underscores and stripping surrounding whitespace
         df_eb.columns = [col.replace(" ", "_").strip() for col in df_eb.columns]
         return df_eb
 
