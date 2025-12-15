@@ -104,7 +104,7 @@ rows_to_add_dict = {
     ],
     "Total_absolute_values>National_and_International_aviation": [
         "Total_absolute_values>International_aviation",
-        "Final_energy_consumption>Transport_sector-Domestic_aviation",
+        "Final_energy_consumption>Transport_sector>Domestic_aviation",
     ],
     "Final_energy_consumption>Other_sectors>Households_and_Commercial_and_public_services": [
         "Final_energy_consumption>Other_sectors>Commercial_and_public_services",
