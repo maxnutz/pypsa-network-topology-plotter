@@ -7,10 +7,10 @@ from PIL import UnidentifiedImageError
 
 import pypsa
 
-from energy_balance_evaluation.statics import eb_row_string_replacement_dict
+from statics import eb_row_string_replacement_dict
 
 
-class EnergyBalanceAT:
+class EnergyBalanceReader:
     """
     AT energy balance reader and mapper
 
@@ -44,7 +44,7 @@ class EnergyBalanceAT:
             self.create_multiindex_structure()
             self.map_variable_names()
         else:
-            self.sheet_name = year
+            self.sheet_name = str(year)
             self.path_to_xlsb = path_to_xlsb
             self.country = country
             self.df_eb = self.import_excel()
@@ -114,6 +114,8 @@ class EnergyBalanceAT:
             layers = [col for col in df.columns if col.startswith("layer_")]
             df[layers] = df[layers].replace(["+", "-", "=", "NaN", "nan"], np.nan)
             df = df.replace("Z", np.nan)
+            is_separator_row = df[layers].isna().all(axis=1)
+            df = df[~is_separator_row].copy()
 
             last_valid_value_1 = df["layer_1"].values[0]
             for index, row in df.iterrows():
@@ -800,12 +802,30 @@ def replace_by_dict(string: str, replacement_dict: dict) -> str:
     return string
 
 
+def read_mapping_csv(filepath):
+    """
+    Reads a mapping CSV file into a pandas DataFrame.
+
+    Parameters
+    ----------
+    filepath : str
+        The path to the mapping CSV file.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The DataFrame containing the mapping information.
+    """
+    df = pd.read_csv(filepath, delimiter=";")
+    return df
+
+
 def main():
     print("This will be a test of the module for energy balance evaluation.")
     try:
-        cs = EnergyBalanceAT("2023")
+        cs = EnergyBalanceReader("2023")
     except Exception as e:
-        print(f"An error occurred while creating the EnergyBalanceAT instance: {e}")
+        print(f"An error occurred while creating the EnergyBalanceReader instance: {e}")
 
 
 if __name__ == "__main__":

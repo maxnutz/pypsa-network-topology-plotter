@@ -12,12 +12,12 @@ The following classes and functions are available:
 - `non_numerical_columns_list`: List of non-numerical columns in eurostat energy balance matrix
 """
 
-from energy_balance_evaluation.energy_balance_eval import EnergyBalance
+# from energy_balance_evaluation.energy_balance_eval import EnergyBalance
 from energy_balance_evaluation.pypsa_network_eval import (
     CarrierNetwork,
     eval_all_networks,
 )
-from energy_balance_evaluation.utils import extract_true_keys
+from energy_balance_evaluation.utils import extract_true_keys, read_mapping_csv
 from energy_balance_evaluation.statics import (
     rows_to_add_dict,
     rows_to_include_dict,
@@ -26,10 +26,11 @@ from energy_balance_evaluation.statics import (
 )
 
 __all__ = [
-    "EnergyBalance",
+    # "EnergyBalance",
     "CarrierNetwork",
     "eval_all_networks",
     "extract_true_keys",
+    "read_mapping_csv",
     "rows_to_include_dict",
     "rows_to_add_dict",
     "non_numerical_columns_list",
