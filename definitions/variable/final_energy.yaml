@@ -26,7 +26,7 @@
       PV), excluding transmission/distribution losses
     unit: GWh
     nrg: FC_E  # Final consumption energy 
-    siec: E7000 - electricity across all sectors
+    siec: E7000 # - electricity across all sectors
     value: 63260.630
 
 - Final Energy|Solids:
@@ -62,9 +62,7 @@
     value: 70099.779
 
 - Final Energy|Liquids:
-    description: final energy consumption of refined liquids (conventional & unconventional
-      oil, biofuels, coal-to-liquids, gas-to-liquids, efuels), excl. non-energy feedstocks,
-      excl. bunkers - NOTE: seems like eurostat energy balance natively includes international aviation and marine bunkers in this cathegory
+    description: "final energy consumption of refined liquids (conventional & unconventional oil, biofuels, coal-to-liquids, gas-to-liquids, efuels), excl. non-energy feedstocks, excl. bunkers - NOTE: seems like eurostat energy balance natively includes international aviation and marine bunkers in this cathegory"
     unit: GWh
     nrg: FC_E  # Final consumption - liquids across all sectors
     siec: O4630,O4651,O4652XR5210B,O4653,O4661XR5230B,O4669,O4671XR5220B,O4680,R5210P,R5210B,R5220P,R5220B,R5230P,R5230B,R5290
