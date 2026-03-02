@@ -4,9 +4,258 @@ Tests for EnergyBalance and related classes
 
 import unittest
 import pandas as pd
-import pytest
 from unittest.mock import patch, MagicMock
 import sys
+import tempfile
+import yaml
+from pathlib import Path
+
+
+class TestVariablesSet(unittest.TestCase):
+    """Test the VariablesSet class"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        # Create temporary files for testing
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_path = Path(self.temp_dir.name)
+
+        # Create a sample YAML definition file
+        self.yaml_content = [
+            {
+                'Final Energy': {
+                    'description': 'total final energy consumption',
+                    'unit': 'GWh',
+                    'nrg': 'FC_E',
+                    'siec': 'TOTAL',
+                    'value': 279335.902
+                }
+            },
+            {
+                'Final Energy|Electricity': {
+                    'description': 'final energy consumption of electricity',
+                    'unit': 'GWh',
+                    'nrg': 'FC_E',
+                    'siec': 'E7000',
+                    'value': 63260.630
+                }
+            }
+        ]
+
+        self.yaml_file = self.temp_path / 'test_variables.yaml'
+        with open(self.yaml_file, 'w') as f:
+            yaml.dump(self.yaml_content, f)
+
+        # Create a sample TSV file
+        self.tsv_file = self.temp_path / 'test_data.tsv'
+        tsv_data = """freq\tnrg_bal\tsiec\tunit\tgeo\t2023
+A\tFC_E\tTOTAL\tGWH\tAT\t279335.902
+A\tFC_E\tE7000\tGWH\tAT\t63260.630
+A\tFC_E\tBIOE\tGWH\tAT\t62388.302
+A\tFC_E\tTOTAL\tGWH\tDE\t500000.0"""
+        with open(self.tsv_file, 'w') as f:
+            f.write(tsv_data)
+
+        self.codelist_file = self.temp_path / 'codelist.yaml'
+
+    def tearDown(self):
+        """Clean up temporary files"""
+        self.temp_dir.cleanup()
+
+    def test_variables_set_initialization(self):
+        """Test VariablesSet initialization"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='final_energy',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+            country='AT'
+        )
+
+        self.assertEqual(vs.name, 'final_energy')
+        self.assertEqual(vs.year, '2023')
+        self.assertEqual(vs.country, 'AT')
+        self.assertIsNone(vs.variables_dict)
+
+    def test_read_yaml_file(self):
+        """Test reading YAML definition file"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='final_energy',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        result = vs.read_yaml_file()
+
+        self.assertIsInstance(result, dict)
+        self.assertIn('Final Energy', result)
+        self.assertIn('Final Energy|Electricity', result)
+        self.assertEqual(result['Final Energy']['nrg'], 'FC_E')
+        self.assertEqual(result['Final Energy']['siec'], 'TOTAL')
+
+    def test_parse_codes_single(self):
+        """Test parsing single code"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='test',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        result = vs._parse_codes('FC_E')
+        self.assertEqual(result, ['FC_E'])
+
+    def test_parse_codes_multiple(self):
+        """Test parsing multiple comma-separated codes"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='test',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        result = vs._parse_codes('FC_OTH_HH_E,FC_OTH_CP_E')
+        self.assertEqual(result, ['FC_OTH_HH_E', 'FC_OTH_CP_E'])
+
+    def test_parse_codes_with_comment(self):
+        """Test parsing codes with inline comments"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='test',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        result = vs._parse_codes('FC_E  # Final consumption')
+        self.assertEqual(result, ['FC_E'])
+
+    def test_parse_codes_empty(self):
+        """Test parsing empty code string"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='test',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        result = vs._parse_codes('')
+        self.assertEqual(result, [])
+
+    def test_load_tsv_data(self):
+        """Test loading TSV data"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='test',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        df = vs._load_tsv_data(str(self.tsv_file))
+
+        self.assertIsInstance(df, pd.DataFrame)
+        self.assertIn('freq', df.columns)
+        self.assertIn('nrg_bal', df.columns)
+        self.assertIn('siec', df.columns)
+        self.assertIn('geo', df.columns)
+
+    def test_calculate_variable_values(self):
+        """Test calculating variable values from TSV"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='test',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+            country='AT'
+        )
+
+        # First read the YAML
+        vs.read_yaml_file()
+
+        # Calculate values
+        values = vs.calculate_variable_values(str(self.tsv_file))
+
+        self.assertIsInstance(values, dict)
+        self.assertIn('Final Energy', values)
+        self.assertIn('Final Energy|Electricity', values)
+        # Check that values are floats
+        self.assertIsInstance(values['Final Energy'], float)
+
+    def test_write_codelist(self):
+        """Test writing codelist YAML"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='test',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+            country='AT'
+        )
+
+        # Write codelist
+        vs.write_codelist(filepath_tsv=str(self.tsv_file))
+
+        # Verify file was created
+        self.assertTrue(self.codelist_file.exists())
+
+        # Read and verify content
+        with open(self.codelist_file, 'r') as f:
+            codelist = yaml.safe_load(f)
+
+        self.assertIsInstance(codelist, list)
+        self.assertGreater(len(codelist), 0)
+
+        # Check structure of first entry
+        first_entry = codelist[0]
+        self.assertIn('variable', first_entry)
+        self.assertIn('year', first_entry)
+        self.assertIn('value', first_entry)
+        self.assertIn('validation', first_entry)
+        self.assertEqual(first_entry['year'], '2023')
+
+    def test_default_country_is_at(self):
+        """Test that default country is Austria"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='test',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        self.assertEqual(vs.country, 'AT')
+
+    def test_custom_country(self):
+        """Test using custom country code"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name='test',
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+            country='DE'
+        )
+
+        self.assertEqual(vs.country, 'DE')
 
 
 class TestEnergyBalanceClass(unittest.TestCase):

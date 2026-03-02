@@ -12,6 +12,7 @@
     unit: GWh
     nrg: FC_E  # Final consumption - energy use (uses FC_E per eurostat_nrg_present)
     siec: TOTAL
+    value: 279335.902
 
 - Final Energy|Agriculture:
     description: total final energy consumption by the agriculture sector
@@ -24,9 +25,9 @@
     description: final energy consumption of electricity (including on-site solar
       PV), excluding transmission/distribution losses
     unit: GWh
-    nrg: FC_E  # Final consumption - electricity across all sectors
-    siec: E7000
-    value: -6779.832
+    nrg: FC_E  # Final consumption energy 
+    siec: E7000 - electricity across all sectors
+    value: 63260.630
 
 - Final Energy|Solids:
     description: final energy solid fuel consumption (coal and solid biomass),
@@ -34,7 +35,7 @@
     unit: GWh
     nrg: FC_E  # Final consumption - solids across all sectors
     siec: BIOE,C0000X0350-0370,P1000  # Bioenergy, solid fossil fuels (aggregate), peat
-    value: 126044.265
+    value: 64986.114
 
 - Final Energy|Solids|Biomass:
     description: final energy consumption of solid biomass (modern and traditional,
@@ -49,7 +50,7 @@
     description: final energy coal consumption, excl. non-energy feedstocks
     unit: GWh
     nrg: FC_E  # Final consumption
-    siec: C0121,C0129,C0210
+    siec: C0000X0350-0370,P1000
     value: 575.712
   
 - Final Energy|Gases:
@@ -99,7 +100,7 @@
     description: final energy consumption of non-renewable waste
     unit: GWh
     nrg: FC_E
-    siec:W6100_6220 # sum of W6100 and W6220
+    siec: W6100_6220 # sum of W6100 and W6220
     value: 2787.302
 
 # - Final Energy|Industry excl Non-Energy Use:
@@ -188,7 +189,7 @@
     unit: GWh
     nrg: FC_IND_E  # Industry final consumption - non-renewable waste
     siec: W6100_6220  # Non-renewable waste - sum
-    value: 0.00
+    value: 2787.302
 
 - Final Energy|Residential and Commercial:
     description: final energy consumed in the residential & commercial sector, ambient

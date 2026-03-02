@@ -2,6 +2,8 @@
 
 import pandas as pd
 import numpy as np
+import yaml
+from pathlib import Path
 
 from .utils import EnergyBalanceReader, read_mapping_csv
 from energy_balance_evaluation import (
@@ -256,6 +258,259 @@ class EnergyBalance(EnergyBalanceReader):
         populate the dict eval_dict for the respective primary energy carrier.
         """
         pass
+
+
+class VariablesSet:
+    def __init__(
+        self,
+        set_name: str,
+        year: int,
+        filepath_definition: str,
+        filepath_codelist: str,
+        country: str = "AT",
+    ) -> None:
+        """
+        Initialize a VariablesSet to read, calculate, and write variable codelists.
+
+        Parameters
+        ----------
+        set_name : str
+            Name of the variable set (e.g., 'final_energy')
+        year : int
+            Year for which to calculate values
+        filepath_definition : str
+            Path to the YAML file containing variable definitions
+        filepath_codelist : str
+            Path where the output codelist YAML file will be written
+        country : str, optional
+            Country code to filter data (default: 'AT' for Austria)
+        """
+        self.name = set_name
+        self.year = str(year)
+        self.filepath_definition = filepath_definition
+        self.filepath_codelist = filepath_codelist
+        self.country = country
+        self.variables_dict = None  # Cache for parsed YAML
+        self.tsv_data = None  # Cache for TSV data
+
+    def read_yaml_file(self) -> dict:
+        """
+        Read and parse variable definitions from YAML file.
+
+        Returns
+        -------
+        dict
+            Dictionary with variable names as keys and metadata dicts as values.
+            Example: {
+                'Final Energy': {
+                    'description': '...',
+                    'unit': 'GWh',
+                    'nrg': 'FC_E',
+                    'siec': 'TOTAL',
+                    'value': 279335.902
+                },
+                ...
+            }
+        """
+        try:
+            with open(self.filepath_definition, 'r') as f:
+                variables_list = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            # Try with FullLoader for more lenient parsing
+            with open(self.filepath_definition, 'r') as f:
+                variables_list = yaml.load(f, Loader=yaml.FullLoader)
+
+        # Convert list of dicts to dict with variable names as keys
+        self.variables_dict = {}
+        for item in variables_list:
+            # Each item should be a dict with one key (variable name)
+            for var_name, var_metadata in item.items():
+                self.variables_dict[var_name] = var_metadata
+
+        return self.variables_dict
+
+    def _parse_codes(self, code_string: str) -> list:
+        """
+        Parse code string into list of individual codes.
+
+        Handles:
+        - Single codes: 'FC_E' → ['FC_E']
+        - Multiple codes: 'FC_OTH_HH_E,FC_OTH_CP_E' → ['FC_OTH_HH_E', 'FC_OTH_CP_E']
+        - Comments: 'FC_E  # comment' → ['FC_E']
+
+        Parameters
+        ----------
+        code_string : str
+            Code string with optional comma separation and comments
+
+        Returns
+        -------
+        list
+            List of individual codes (stripped and comment-free)
+        """
+        # Remove comments (text after #)
+        if '#' in code_string:
+            code_string = code_string.split('#')[0]
+
+        # Split by comma and strip whitespace
+        codes = [code.strip() for code in code_string.split(',')]
+        return [code for code in codes if code]  # Remove empty strings
+
+    def _load_tsv_data(self, filepath_tsv: str) -> pd.DataFrame:
+        """
+        Load and parse TSV file with Eurostat energy balance data.
+
+        Parameters
+        ----------
+        filepath_tsv : str
+            Path to the TSV file
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns: freq, nrg_bal, siec, unit, geo, and year columns
+        """
+        # Read TSV file, treating the header specially
+        df = pd.read_csv(filepath_tsv, sep=',|\t', dtype=str)
+
+        # The first column header is 'freq,nrg_bal,siec,unit,geo\TIME_PERIOD'
+        # We need to properly split this
+        first_col = df.columns[0]
+        if 'freq' in first_col and 'nrg_bal' in first_col:
+            # Header is malformed, need to read differently
+            df = pd.read_csv(
+                filepath_tsv,
+                sep='\t',
+                dtype=str,
+                skiprows=1
+            )
+
+        # Set column names properly
+        col_names = list(df.columns)
+
+        # Convert numeric columns to float, handling ':' as missing
+        year_columns = col_names[5:]  # Years are after geo
+        for year_col in year_columns:
+            if year_col in df.columns:
+                df[year_col] = pd.to_numeric(
+                    df[year_col].replace(':', np.nan), errors='coerce'
+                )
+
+        return df
+
+    def calculate_variable_values(self, filepath_tsv: str) -> dict:
+        """
+        Calculate variable values by querying the TSV file.
+
+        For each variable, queries the TSV file for rows matching the specified
+        nrg and siec codes for the given country and year, then sums the values.
+
+        Parameters
+        ----------
+        filepath_tsv : str
+            Path to the pypsa-eur-download.tsv file
+
+        Returns
+        -------
+        dict
+            Dictionary with variable names as keys and calculated values as values.
+            Example: {'Final Energy': 279335.902, 'Final Energy|Electricity': 63260.630, ...}
+        """
+        if self.variables_dict is None:
+            self.read_yaml_file()
+
+        # Load TSV data (cache it)
+        if self.tsv_data is None:
+            self.tsv_data = self._load_tsv_data(filepath_tsv)
+
+        df = self.tsv_data.copy()
+
+        # Filter by country
+        df = df[df['geo'] == self.country]
+
+        calculated_values = {}
+
+        for var_name, var_metadata in self.variables_dict.items():
+            nrg = var_metadata.get('nrg', '')
+            siec = var_metadata.get('siec', '')
+
+            # Parse codes
+            nrg_codes = self._parse_codes(nrg)
+            siec_codes = self._parse_codes(siec)
+
+            # Special handling for 'TOTAL' siec code
+            if 'TOTAL' in siec_codes:
+                # When siec is 'TOTAL', match rows where siec is 'TOTAL'
+                df_filtered = df[df['nrg_bal'].isin(nrg_codes) & (df['siec'] == 'TOTAL')]
+            else:
+                # Match rows where siec matches any of the specified codes
+                df_filtered = df[df['nrg_bal'].isin(nrg_codes) & df['siec'].isin(siec_codes)]
+
+            # Get the value for the specified year
+            if self.year in df_filtered.columns:
+                values = df_filtered[self.year].sum(skipna=True)
+                calculated_values[var_name] = float(values) if values > 0 else 0.0
+            else:
+                calculated_values[var_name] = 0.0
+
+        return calculated_values
+
+    def write_codelist(self, filepath_tsv: str | None = None) -> None:
+        """
+        Writing out variables of the following form:
+        - variable: <variable_name>
+            year: <self.year>
+            value : <value, calculated with self.calculate_variable_values()>
+            validation:
+                - rtol: 0.3
+                - warning_level: low
+                  rtol: 0.1
+        """
+        if self.variables_dict is None:
+            self.read_yaml_file()
+
+        # Calculate values if filepath_tsv is provided, otherwise expect values to exist
+        if filepath_tsv is not None:
+            calculated_values = self.calculate_variable_values(filepath_tsv)
+        else:
+            # Try to infer the path from typical project structure
+            cwd = Path(self.filepath_definition).parent.parent.parent
+            inferred_tsv = cwd / 'resources' / 'pypsa-eur-download.tsv'
+            if inferred_tsv.exists():
+                calculated_values = self.calculate_variable_values(str(inferred_tsv))
+            else:
+                raise FileNotFoundError(
+                    f"filepath_tsv not provided and could not infer from project structure"
+                )
+
+        # Build output codelist
+        codelist = []
+        for var_name, var_metadata in self.variables_dict.items():
+            value = calculated_values.get(var_name, 0.0)
+
+            entry = {
+                'variable': var_name,
+                'year': self.year,
+                'value': round(value, 3),  # Round to 3 decimal places
+                'validation': [
+                    {'rtol': 0.3},
+                    {'warning_level': 'low', 'rtol': 0.1}
+                ]
+            }
+            codelist.append(entry)
+
+        # Write to YAML file
+        output_path = Path(self.filepath_codelist)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_path, 'w') as f:
+            yaml.dump(
+                codelist,
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True
+            )
 
 
 def main():

@@ -11,6 +11,12 @@ requires-python = ">=3.8"
 authors = [
     {name = "Max Nutz", email = "max.nutz@boku.ac.at"}
 ]
+dependencies = [
+    "pandas>=1.0.0",
+    "numpy>=1.18.0",
+    "pyyaml>=5.3",
+    "pypsa>=0.18.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/maxnutz/energy_balance_evaluation"
