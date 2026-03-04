@@ -3,10 +3,16 @@
 import pandas as pd
 import numpy as np
 
-from .utils import EnergyBalanceAT
+from .utils import EnergyBalanceReader, read_mapping_csv
+from energy_balance_evaluation import (
+    extract_true_keys,
+    non_numerical_columns_list,
+    rows_to_add_dict,
+    rows_to_include_dict,
+)
 
 
-class EnergyBalance(EnergyBalanceAT):
+class EnergyBalance(EnergyBalanceReader):
     """
     Class for evaluating the energy balance data
 
@@ -31,11 +37,13 @@ class EnergyBalance(EnergyBalanceAT):
         self,
         year: str,
         path_to_xlsb: str = "EnergyBalances/BalancesApril2025/AT-Energy-balance-sheets-April2025-edition.xlsb",
+        filepath_mapping_csv: str = "resources/carrier_mapping_energy_balance.csv",
         country: str = "AT",
         input_matrix: pd.DataFrame | None = None,
         original_input: bool = True,
     ):
         super().__init__(year, path_to_xlsb, country, input_matrix, original_input)
+        self.filepath_mapping_csv = filepath_mapping_csv
 
     def get_top_layer_entries(self, only_total_values: bool = False) -> pd.DataFrame:
         """
@@ -86,11 +94,188 @@ class EnergyBalance(EnergyBalanceAT):
             return df[["TOTAL"]]
         return df
 
+    def reduce_energy_balance_by_rows(self) -> pd.DataFrame:
+        """
+        Reduce an EnergyBalance object to a subset of rows by selecting based on the defined
+        dict in static (rows_to_include_dict) and summing up rows according to the rows_to_add_dict.
+
+        Returns
+        -------
+        pd.DataFrame
+            A pandas DataFrame containing the reduced EnergyBalance data.
+        """
+        list_var_names_to_include = extract_true_keys(rows_to_include_dict)
+        df_light = self.df_eb[
+            self.df_eb["var_name"].isin(list_var_names_to_include)
+        ].copy()
+
+        # sum rows to concatenate and create new rows index
+        # - therefore split in numerical and non-numerical parts
+        # - transpose for easy summing of corresponding rows
+        # - recombine afterwards and remove unnecessary rows
+        added_rows_specs = {
+            key: {f"layer_{i}": part for i, part in enumerate(key.split(">"))}
+            for key in rows_to_add_dict
+        }
+        df_light.set_index("var_name", inplace=True, drop=False)
+        df_light_numerical = df_light.loc[
+            :,
+            ~df_light.columns.isin(non_numerical_columns_list),
+        ]
+        df_light_non_numerical = df_light.loc[
+            :,
+            df_light.columns.isin(non_numerical_columns_list),
+        ]
+        df_light_numerical_T = df_light_numerical.T
+        # Sum specified rows (given by `rows_to_add_dict`) into new aggregated rows.
+        # Be defensive: entries in `rows_to_add_dict` may be lists, Index objects
+        # or other array-like types and may not match column labels exactly
+        # (e.g., whitespace differences). Try to match available columns and
+        # provide a helpful error message if nothing can be matched.
+        for key, value in rows_to_add_dict.items():
+            # normalize value to a list of strings
+            if isinstance(value, (str, bytes)):
+                vals = [value]
+            else:
+                vals = list(value)
+
+            # find columns that match the requested values
+            cols_to_sum = [c for c in df_light_numerical_T.columns if c in vals]
+
+            # try a relaxed match (normalize both sides) if none found
+            if not cols_to_sum:
+                # build mapping from normalized (stripped) column labels to original labels
+                normalized_col_map = {
+                    (c.strip() if isinstance(c, str) else c): c
+                    for c in df_light_numerical_T.columns
+                }
+                # normalize the requested values in the same way
+                normalized_vals = {
+                    (v.strip() if isinstance(v, str) else v) for v in vals
+                }
+                # select original column labels whose normalized form matches normalized values
+                cols_to_sum = [
+                    original
+                    for normalized, original in normalized_col_map.items()
+                    if normalized in normalized_vals
+                ]
+
+            if not cols_to_sum:
+                raise KeyError(
+                    f"Rows to add '{key}' reference missing columns {vals!r} in the transposed numeric df. "
+                    f"Available columns (first 20): {list(df_light_numerical_T.columns[:20])!r}"
+                )
+
+            df_light_numerical_T[key] = df_light_numerical_T[cols_to_sum].sum(axis=1)
+        df_light_numerical = df_light_numerical_T.T
+        df_light_all = pd.concat(
+            [df_light_numerical, df_light_non_numerical], axis=1, join="outer"
+        )
+        rows_to_delete = [
+            item for sublist in rows_to_add_dict.values() for item in sublist
+        ]
+        df_light_all = df_light_all[~df_light_all.index.isin(rows_to_delete)]
+
+        df_light_all["var_name"] = df_light_all.index
+        # add layer-entries for new summed up rows
+        for row, layer_dict in added_rows_specs.items():
+            for layer, value in layer_dict.items():
+                df_light_all.loc[row, layer] = value
+        df_light_all.sort_values(["layer_0", "layer_1", "layer_2"], inplace=True)
+        df_light_all.set_index(
+            ["layer_0", "layer_1", "layer_2"], inplace=True, drop=False
+        )
+        return df_light_all
+
+    def reduce_energy_balance_by_columns(
+        self, df: pd.DataFrame, mapping_eb_pypsa: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Reduce the energy balance dataframe by summing up columns
+        according to a given mapping between eb_index and pypsa-entry.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The energy balance dataframe to be reduced.
+        mapping_eb_pypsa : pd.DataFrame
+            A dataframe containing the mapping between eb_index
+            and pypsa-entry.
+
+        Returns
+        -------
+        pd.DataFrame
+            A reduced energy balance dataframe containing the summed up columns.
+        """
+        # create mapping between eb_index and pypsa-entry and create sum of respective columns
+        mapping_eb_pypsa_sum = mapping_eb_pypsa.copy().set_index(
+            "pypsa-entry", drop=True
+        )
+        mapping_eb_pypsa_dict = (
+            mapping_eb_pypsa_sum.groupby(mapping_eb_pypsa_sum.index)
+            .agg(list)["eb_index"]
+            .to_dict()
+        )
+        for pypsa_key, eb_list in mapping_eb_pypsa_dict.items():
+            df[pypsa_key] = df[eb_list].sum(axis=1)
+        df_red_pypsa_columns = df.loc[
+            :,
+            df.columns.isin(
+                non_numerical_columns_list + list(mapping_eb_pypsa_dict.keys())
+            ),
+        ]
+        return df_red_pypsa_columns
+
+    def create_reduced_energy_balance(self) -> pd.DataFrame:
+        """
+        Creates a reduced version of the eurostat energy balance from the
+        given file path and the mapping between eb_index and pypsa-entry.
+
+        Parameters
+        ----------
+        self : object
+            The object containing the file paths and the mapping.
+
+        Inputfiles:
+        -----------
+        resources/carrier_mapping_energy_balance.csv: holding the mapping of
+            pypsa-carriers with the energy balance carriers
+
+        Returns
+        -------
+        pd.DataFrame
+            A reduced energy balance dataframe containing the summed up columns.
+        """
+        # index_to_nicenames = eb.df_eb.iloc[0, :].to_dict()
+        # pe_carrier_nicenames_to_index = {
+        #     val: key for key, val in index_to_nicenames.items()
+        # }
+        mapping_eb_pypsa = read_mapping_csv(self.filepath_mapping_csv)
+        df_light_rows = self.reduce_energy_balance_by_rows()
+        df_light = self.reduce_energy_balance_by_columns(
+            df=df_light_rows, mapping_eb_pypsa=mapping_eb_pypsa
+        )
+        return df_light
+
+    def populate_dict_from_eb_input(self) -> None:
+        """
+        Reads from the reduced version of the eurostat energy balance to
+        populate the dict eval_dict for the respective primary energy carrier.
+        """
+        pass
+
 
 def main():
-    print("This is a unit test of data_selection")
+    print("This is a unit test of the energy_balance_eval")
 
-    pass
+    eb = EnergyBalance(
+        year=2023,
+        path_to_xlsb="resources/EnergyBalances/BalancesFebruary2026/AT-Energy-balance-sheets-February2026-edition.xlsb",
+        filepath_mapping_csv="resources/carrier_mapping_energy_balance.csv",
+        country="AT",
+        original_input=True,
+    )
+    eb.create_reduced_energy_balance()
 
 
 if __name__ == "__main__":
