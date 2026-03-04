@@ -14,14 +14,14 @@ class TestIntegration(unittest.TestCase):
     def test_extract_true_keys_with_statics(self):
         """Test extract_true_keys with actual static data"""
         from energy_balance_evaluation import extract_true_keys, rows_to_include_dict
-        
+
         # Use actual static data
         result = extract_true_keys(rows_to_include_dict)
-        
+
         # Should return a non-empty list
         self.assertIsInstance(result, list)
         self.assertGreater(len(result), 0)
-        
+
         # All elements should be strings
         for item in result:
             self.assertIsInstance(item, str)
@@ -29,7 +29,7 @@ class TestIntegration(unittest.TestCase):
     def test_workflow_read_mapping_and_extract(self):
         """Test workflow of reading mapping and extracting data"""
         from energy_balance_evaluation import read_mapping_csv
-        
+
         # Create a temporary CSV file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             f.write("Category;PyPSA_Carrier;Conversion\n")
@@ -37,7 +37,7 @@ class TestIntegration(unittest.TestCase):
             f.write("Gas;gas;1.0\n")
             f.flush()
             temp_path = f.name
-        
+
         try:
             df = read_mapping_csv(temp_path)
             self.assertEqual(len(df), 2)
@@ -45,10 +45,71 @@ class TestIntegration(unittest.TestCase):
         finally:
             os.unlink(temp_path)
 
+    def test_reduce_energy_balance_by_columns_integration(self):
+        """Integration test for mapping CSV and reduce_energy_balance_by_columns.
+
+        This test validates the full pipeline using the correct pypsa-entry/eb_index schema.
+        """
+        from energy_balance_evaluation import read_mapping_csv
+        from energy_balance_evaluation.energy_balance_eval import EnergyBalance
+
+        # Small numeric DataFrame whose columns match eb_index values
+        # No need to include layer columns for this direct test
+        data = pd.DataFrame(
+            {
+                "coal_primary": [1.0, 2.0],
+                "coal_secondary": [3.0, 4.0],
+                "gas": [5.0, 6.0],
+            },
+            index=["t0", "t1"],
+        )
+
+        # Mapping with pypsa-entry / eb_index schema, including many-to-one mappings
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            f.write("pypsa-entry;eb_index\n")
+            f.write("coal;coal_primary\n")
+            f.write("coal;coal_secondary\n")
+            f.write("gas;gas\n")
+            f.flush()
+            mapping_path = f.name
+
+        try:
+            mapping_df = read_mapping_csv(mapping_path)
+
+            # Create an EnergyBalance instance for access to the method
+            sample_df = pd.DataFrame(
+                {
+                    "layer_0": ["A"],
+                    "layer_1": [None],
+                    "layer_2": [None],
+                    "index": ["X"],
+                    "var_name": ["X"],
+                    "1990": [1.0],
+                }
+            )
+            eb = EnergyBalance("2023", input_matrix=sample_df)
+
+            # Run the reduction on our test data
+            reduced = eb.reduce_energy_balance_by_columns(data, mapping_df)
+
+            # We expect aggregation into pypsa-entry columns: coal = coal_primary + coal_secondary, gas unchanged
+            self.assertListEqual(sorted(reduced.columns.tolist()), ["coal", "gas"])
+            self.assertListEqual(reduced.index.tolist(), ["t0", "t1"])
+
+            # Check numeric aggregation
+            # t0: coal = 1 + 3 = 4, gas = 5
+            # t1: coal = 2 + 4 = 6, gas = 6
+            self.assertAlmostEqual(reduced.loc["t0", "coal"], 4.0)
+            self.assertAlmostEqual(reduced.loc["t0", "gas"], 5.0)
+            self.assertAlmostEqual(reduced.loc["t1", "coal"], 6.0)
+            self.assertAlmostEqual(reduced.loc["t1", "gas"], 6.0)
+        finally:
+            os.unlink(mapping_path)
+
     def test_energy_balance_reader_with_prepared_dataframe(self):
         """Test EnergyBalanceReader with properly prepared DataFrame"""
         from energy_balance_evaluation.utils import EnergyBalanceReader
-        
+
         sample_df = pd.DataFrame({
             'layer_0': ['Total_absolute_values', 'Total_absolute_values', 
                        'Transformation_input', 'Transformation_input'],
@@ -60,12 +121,12 @@ class TestIntegration(unittest.TestCase):
             '1990': [100.0, 50.0, 25.0, 15.0],
             'TOTAL': [100.0, 50.0, 25.0, 15.0],
         })
-        
+
         reader = EnergyBalanceReader(
             "2023",
             input_matrix=sample_df,
         )
-        
+
         # Should have processed the dataframe
         self.assertIsNotNone(reader.df_eb)
         self.assertIsNotNone(reader.df_variables)
@@ -79,16 +140,16 @@ class TestIntegration(unittest.TestCase):
             eb_row_string_replacement_dict,
         )
         from energy_balance_evaluation.utils import replace_by_dict
-        
+
         # Extract keys from statics
         included_keys = extract_true_keys(rows_to_include_dict)
         self.assertGreater(len(included_keys), 0)
-        
+
         # Use replacement dict
         test_string = "Primary_production Imports"
         for key, value in list(eb_row_string_replacement_dict.items())[:3]:
             test_string = replace_by_dict(test_string, {key: value})
-        
+
         self.assertIsInstance(test_string, str)
 
 

@@ -137,20 +137,27 @@ class EnergyBalance(EnergyBalanceReader):
             if isinstance(value, (str, bytes)):
                 vals = [value]
             else:
-                try:
-                    vals = list(value)
-                except Exception:
-                    raise Exception()
-                    vals = [value]
+                vals = list(value)
 
             # find columns that match the requested values
             cols_to_sum = [c for c in df_light_numerical_T.columns if c in vals]
 
-            # try a relaxed match (strip whitespace) if none found
+            # try a relaxed match (normalize both sides) if none found
             if not cols_to_sum:
-                stripped_vals = [v.strip() if isinstance(v, str) else v for v in vals]
+                # build mapping from normalized (stripped) column labels to original labels
+                normalized_col_map = {
+                    (c.strip() if isinstance(c, str) else c): c
+                    for c in df_light_numerical_T.columns
+                }
+                # normalize the requested values in the same way
+                normalized_vals = {
+                    (v.strip() if isinstance(v, str) else v) for v in vals
+                }
+                # select original column labels whose normalized form matches normalized values
                 cols_to_sum = [
-                    c for c in df_light_numerical_T.columns if c in stripped_vals
+                    original
+                    for normalized, original in normalized_col_map.items()
+                    if normalized in normalized_vals
                 ]
 
             if not cols_to_sum:

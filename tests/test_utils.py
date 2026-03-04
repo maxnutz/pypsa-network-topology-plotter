@@ -197,29 +197,92 @@ class TestEnergyBalanceReader(unittest.TestCase):
             'TOTAL': [100.0, 50.0, 25.0, 15.0],
         })
 
+    def _get_sample_df_with_separator(self):
+        """Helper to create sample energy balance DataFrame with separator row"""
+        return pd.DataFrame(
+            {
+                "layer_0": [
+                    "Total_absolute_values",
+                    "Total_absolute_values",
+                    "Transformation_input",
+                    "Transformation_input",
+                    None,
+                ],  # separator row: all layer_* are NaN
+                "layer_1": [
+                    None,
+                    None,
+                    "Electricity_and_heat_generation",
+                    "Electricity_and_heat_generation",
+                    None,
+                ],  # separator row
+                "layer_2": [
+                    None,
+                    None,
+                    "Main_activity_producer_electricity_only",
+                    "Main_activity_producer_CHP",
+                    None,
+                ],  # separator row
+                "index": [
+                    "Primary_production",
+                    "Imports",
+                    "Coal",
+                    "Gas",
+                    "Separator_row",
+                ],
+                "+/-": [None, None, None, None, None],
+                "depth": [0, 0, 1, 1, None],
+                "1990": [100.0, 50.0, 25.0, 15.0, None],
+                "1991": [105.0, 52.0, 26.0, 16.0, None],
+                "1992": [110.0, 54.0, 27.0, 17.0, None],
+                "TOTAL": [100.0, 50.0, 25.0, 15.0, None],
+            }
+        )
+
     def test_reader_initialization_with_dataframe(self):
         """Test initializing EnergyBalanceReader with a DataFrame"""
         from energy_balance_evaluation.utils import EnergyBalanceReader
-        
+
         reader = EnergyBalanceReader(
             "2023",
             input_matrix=self._get_sample_df(),
         )
-        
+
         self.assertIsNotNone(reader.df_eb)
         self.assertIsInstance(reader.df_eb, pd.DataFrame)
 
     def test_reader_has_expected_attributes(self):
         """Test that reader has expected attributes"""
         from energy_balance_evaluation.utils import EnergyBalanceReader
-        
+
         reader = EnergyBalanceReader(
             "2023",
             input_matrix=self._get_sample_df(),
         )
-        
+
         self.assertTrue(hasattr(reader, 'df_eb'))
         self.assertTrue(hasattr(reader, 'df_variables'))
+
+    def test_separator_rows_are_removed(self):
+        """Test that separator rows (all layer_* NaN) are removed from df_eb"""
+        from energy_balance_evaluation.utils import EnergyBalanceReader
+
+        df = self._get_sample_df_with_separator()
+
+        reader = EnergyBalanceReader(
+            "2023",
+            input_matrix=df,
+        )
+
+        df_eb = reader.df_eb
+
+        # The df_eb is indexed by layer_0, layer_1, layer_2 with var_name as a column
+        # Check that var_name column doesn't contain the separator row
+        var_names = df_eb["var_name"].tolist()
+        self.assertNotIn("Separator_row", var_names)
+
+        # We should have at least 4 records (the non-separator rows)
+        # Note: row names get transformed during multiindex creation, so we just check count
+        self.assertGreaterEqual(len(var_names), 4)
 
 
 if __name__ == '__main__':
