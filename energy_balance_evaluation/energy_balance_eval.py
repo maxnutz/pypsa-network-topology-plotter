@@ -277,7 +277,7 @@ class VariablesSet:
         set_name : str
             Name of the variable set (e.g., 'final_energy')
         year : int
-            Year for which to calculate values
+            Year for which to calculate values - integer. converted to string for csv-readup.
         filepath_definition : str
             Path to the YAML file containing variable definitions
         filepath_codelist : str
@@ -286,7 +286,7 @@ class VariablesSet:
             Country code to filter data (default: 'AT' for Austria)
         """
         self.name = set_name
-        self.year = str(year)
+        self.year = year
         self.filepath_definition = filepath_definition
         self.filepath_codelist = filepath_codelist
         self.country = country
@@ -486,8 +486,8 @@ class VariablesSet:
                 df_filtered = df[df['nrg_bal'].isin(nrg_codes) & df['siec'].isin(siec_codes)]
 
             # Get the value for the specified year
-            if self.year in df_filtered.columns:
-                values = df_filtered[self.year].sum(skipna=True)
+            if str(self.year) in df_filtered.columns:
+                values = df_filtered[str(self.year)].sum(skipna=True)
                 calculated_values[var_name] = float(values) if values != 0 else 0.0
             else:
                 calculated_values[var_name] = np.nan
@@ -529,7 +529,7 @@ class VariablesSet:
 
             entry = {
                 "variable": var_name,
-                "year": int(self.year),
+                "year": self.year,  # write as integer value
                 "value": round(value, 3),  # Round to 3 decimal places
                 "validation": [{"rtol": 0.3}, {"warning_level": "low", "rtol": 0.1}],
             }

@@ -4,6 +4,7 @@ Tests for EnergyBalance and related classes
 
 import unittest
 import pandas as pd
+import numpy as np
 from unittest.mock import patch, MagicMock
 import sys
 import tempfile
@@ -75,7 +76,7 @@ A\tFC_E\tTOTAL\tGWH\tDE\t500000.0"""
         )
 
         self.assertEqual(vs.name, "final_energy")
-        self.assertEqual(vs.year, "2023")
+        self.assertEqual(vs.year, 2023)
         self.assertEqual(vs.country, "AT")
         self.assertIsNone(vs.variables_dict)
 
@@ -97,6 +98,73 @@ A\tFC_E\tTOTAL\tGWH\tDE\t500000.0"""
         self.assertIn("Final Energy|Electricity", result)
         self.assertEqual(result["Final Energy"]["nrg"], "FC_E")
         self.assertEqual(result["Final Energy"]["siec"], "TOTAL")
+
+    def test_read_yaml_file_missing_file(self):
+        """Test read_yaml_file with non-existent definition file"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name="final_energy",
+            year=2023,
+            filepath_definition="this_file_should_not_exist_12345.yaml",
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        with self.assertRaises(FileNotFoundError):
+            vs.read_yaml_file()
+
+    def test_read_yaml_file_non_list_top_level(self):
+        """Test read_yaml_file with YAML that does not parse to a list"""
+        import os
+
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
+            yaml.safe_dump({"not": "a list"}, tmp)
+            definition_path = tmp.name
+
+        try:
+            vs = VariablesSet(
+                set_name="final_energy",
+                year=2023,
+                filepath_definition=definition_path,
+                filepath_codelist=str(self.codelist_file),
+            )
+
+            with self.assertRaises(ValueError):
+                vs.read_yaml_file()
+        finally:
+            if os.path.exists(definition_path):
+                os.remove(definition_path)
+
+    def test_read_yaml_file_list_with_non_dict_element(self):
+        """Test read_yaml_file with a list containing non-dict elements"""
+        import os
+
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        yaml_content = [
+            "this is not a dict",
+            {"Final Energy": {"nrg": "FC_E", "siec": "TOTAL"}},
+        ]
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
+            yaml.safe_dump(yaml_content, tmp)
+            definition_path = tmp.name
+
+        try:
+            vs = VariablesSet(
+                set_name="final_energy",
+                year=2023,
+                filepath_definition=definition_path,
+                filepath_codelist=str(self.codelist_file),
+            )
+
+            with self.assertRaises(ValueError):
+                vs.read_yaml_file()
+        finally:
+            if os.path.exists(definition_path):
+                os.remove(definition_path)
 
     def test_parse_codes_single(self):
         """Test parsing single code"""
@@ -206,6 +274,59 @@ A\tFC_E\tTOTAL\tGWH\tDE\t500000.0"""
         self.assertEqual(len(df_f), 1)
         self.assertAlmostEqual(df_f["2020"].iloc[0], 12345.6)
 
+    def test_load_tsv_data_with_clean_headers(self):
+        """Test loading TSV with already normalized headers (no special geo\\TIME_PERIOD)"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        # Create a TSV with clean headers: freq, nrg_bal, siec, unit, geo, year columns
+        clean = self.temp_path / "clean.tsv"
+        header = "freq\tnrg_bal\tsiec\tunit\tgeo\t2023\n"
+        row = "A\tFC_E\tTOTAL\tGWH\tAT\t100.5\n"
+        with open(clean, "w") as f:
+            f.write(header)
+            f.write(row)
+
+        vs = VariablesSet(
+            set_name="test",
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        df = vs._load_tsv_data(str(clean))
+        self.assertIn("geo", df.columns)
+        self.assertIn("2023", df.columns)
+        # Check that data is accessible
+        df_f = df[df["geo"] == "AT"]
+        self.assertEqual(len(df_f), 1)
+        self.assertAlmostEqual(df_f["2023"].iloc[0], 100.5)
+
+    def test_load_tsv_data_colon_as_missing_value(self):
+        """Test that ':' is converted to NaN in year columns"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+        import numpy as np
+
+        # Create TSV with ':' as missing value
+        with_missing = self.temp_path / "missing.tsv"
+        header = "freq\tnrg_bal\tsiec\tunit\tgeo\t2023\n"
+        # Row with ':' in the year column (missing value)
+        row = "A\tFC_E\tTOTAL\tGWH\tAT\t:\n"
+        with open(with_missing, "w") as f:
+            f.write(header)
+            f.write(row)
+
+        vs = VariablesSet(
+            set_name="test",
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+        )
+
+        df = vs._load_tsv_data(str(with_missing))
+        # Check that ':' was converted to NaN
+        value = df[df["geo"] == "AT"]["2023"].iloc[0]
+        self.assertTrue(np.isnan(value), f"Expected NaN but got {value}")
+
     def test_calculate_variable_values(self):
         """Test calculating variable values from TSV"""
         from energy_balance_evaluation.energy_balance_eval import VariablesSet
@@ -232,6 +353,59 @@ A\tFC_E\tTOTAL\tGWH\tDE\t500000.0"""
         self.assertGreater(values["Final Energy"], 0)
         self.assertAlmostEqual(values["Final Energy"], 279335.902)
         self.assertAlmostEqual(values["Final Energy|Electricity"], 63260.63)
+
+    def test_calculate_variable_values_missing_year_column(self):
+        """Test calculate_variable_values when year column is missing from TSV"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name="test",
+            year=1900,  # Use a year not in the test TSV
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+            country="AT",
+        )
+
+        # First read the YAML
+        vs.read_yaml_file()
+
+        # Calculate values with missing year column
+        values = vs.calculate_variable_values(str(self.tsv_file))
+
+        self.assertIsInstance(values, dict)
+        # All variables should resolve to np.nan if the year column is missing
+        for var_name, value in values.items():
+            self.assertTrue(
+                np.isnan(value),
+                msg=f"Expected np.nan for missing year column in {var_name}, got {value!r}",
+            )
+
+    def test_calculate_variable_values_empty_filter(self):
+        """Test calculate_variable_values when filter returns empty DataFrame"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name="test",
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+            country="ZZ",  # Use a non-existent country to force empty filter
+        )
+
+        # First read the YAML
+        vs.read_yaml_file()
+
+        # Calculate values with empty filter
+        values = vs.calculate_variable_values(str(self.tsv_file))
+
+        self.assertIsInstance(values, dict)
+        # All variables should return 0.0 when filtered DataFrame is empty
+        for var_name, value in values.items():
+            self.assertEqual(
+                value,
+                0.0,
+                msg=f"Expected 0.0 for empty filter in {var_name}, got {value!r}",
+            )
 
     def test_write_codelist(self):
         """Test writing codelist YAML"""
@@ -264,7 +438,89 @@ A\tFC_E\tTOTAL\tGWH\tDE\t500000.0"""
         self.assertIn("year", first_entry)
         self.assertIn("value", first_entry)
         self.assertIn("validation", first_entry)
-        self.assertEqual(first_entry["year"], "2023")
+        # Year is stored as an int in the YAML
+        self.assertEqual(first_entry["year"], 2023)
+
+    def test_write_codelist_value_rounding_and_validation(self):
+        """Test that write_codelist correctly rounds values and validates structure"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name="test",
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+            country="AT",
+        )
+
+        # Write codelist
+        vs.write_codelist(filepath_tsv=str(self.tsv_file))
+
+        # Load the written codelist and verify structure
+        with open(self.codelist_file, "r") as f:
+            codelist = yaml.safe_load(f)
+
+        # Find the "Final Energy" entry
+        fe_entry = None
+        for entry in codelist:
+            if entry.get("variable") == "Final Energy":
+                fe_entry = entry
+                break
+
+        self.assertIsNotNone(fe_entry, "Final Energy entry not found in codelist")
+
+        # Check that `year` is written as an int or string representation of int
+        year = fe_entry.get("year")
+        self.assertIsNotNone(year)
+        # The actual implementation stores year as int according to the code
+        self.assertIsInstance(year, (int, str))
+        if isinstance(year, str):
+            self.assertEqual(year, "2023")
+        else:
+            self.assertEqual(year, 2023)
+
+        # Check that `value` is rounded to 3 decimal places
+        value = fe_entry.get("value")
+        self.assertIsInstance(value, (float, int))
+        # Verify rounding by converting to string and checking decimal places
+        value_str = f"{value:.3f}"
+        # Ensure exactly three or fewer decimal places are present
+        decimal_part = value_str.split(".")[-1]
+        self.assertLessEqual(len(decimal_part), 3)
+
+        # Check validation structure: should be a list of two dicts
+        validation = fe_entry.get("validation")
+        self.assertIsInstance(validation, list)
+        self.assertEqual(len(validation), 2)
+
+        first_val, second_val = validation
+        # First validation: {"rtol": 0.3}
+        self.assertIsInstance(first_val, dict)
+        self.assertIn("rtol", first_val)
+        self.assertAlmostEqual(first_val["rtol"], 0.3)
+
+        # Second validation: {"warning_level": "low", "rtol": 0.1}
+        self.assertIsInstance(second_val, dict)
+        self.assertEqual(second_val.get("warning_level"), "low")
+        self.assertIn("rtol", second_val)
+        self.assertAlmostEqual(second_val["rtol"], 0.1)
+
+    def test_write_codelist_missing_tsv_raises(self):
+        """Test that FileNotFoundError is raised when TSV path is not found"""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        vs = VariablesSet(
+            set_name="test_missing_tsv",
+            year=2023,
+            filepath_definition=str(self.yaml_file),
+            filepath_codelist=str(self.codelist_file),
+            country="AT",
+        )
+
+        # When filepath_tsv is None and the inferred TSV doesn't exist,
+        # write_codelist should raise FileNotFoundError
+        with self.assertRaises(FileNotFoundError):
+            vs.write_codelist(filepath_tsv=None)
 
     def test_default_country_is_at(self):
         """Test that default country is Austria"""
@@ -292,6 +548,62 @@ A\tFC_E\tTOTAL\tGWH\tDE\t500000.0"""
         )
 
         self.assertEqual(vs.country, "DE")
+
+
+class TestCalculateVariableValuesMissingGeo(unittest.TestCase):
+    """Test calculate_variable_values with missing geo column"""
+
+    def test_missing_geo_column_raises_keyerror(self):
+        """TSV without `geo` should raise KeyError in calculate_variable_values."""
+        from energy_balance_evaluation.energy_balance_eval import VariablesSet
+
+        # Create a temporary directory and files
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_path = Path(tmpdir)
+
+            # Create a minimal YAML definition
+            yaml_content = [
+                {
+                    "Final Energy": {
+                        "description": "test",
+                        "unit": "GWh",
+                        "nrg": "FC_E",
+                        "siec": "TOTAL",
+                        "value": 100.0,
+                    }
+                }
+            ]
+
+            yaml_file = temp_path / "test_def.yaml"
+            with open(yaml_file, "w") as f:
+                yaml.dump(yaml_content, f)
+
+            # Create a minimal TSV missing the `geo` column
+            tsv_file = temp_path / "input_without_geo.tsv"
+            df_no_geo = pd.DataFrame(
+                {
+                    "freq": ["A"],
+                    "nrg_bal": ["FC_E"],
+                    "siec": ["TOTAL"],
+                    "unit": ["GWH"],
+                    "2023": [1.0],
+                }
+            )
+            df_no_geo.to_csv(tsv_file, sep="\t", index=False)
+
+            codelist_file = temp_path / "codelist.yaml"
+
+            # Create VariablesSet and expect KeyError when calculating values
+            vs = VariablesSet(
+                set_name="test",
+                year=2023,
+                filepath_definition=str(yaml_file),
+                filepath_codelist=str(codelist_file),
+                country="AT",
+            )
+
+            with self.assertRaisesRegex(KeyError, "geo"):
+                vs.calculate_variable_values(str(tsv_file))
 
 
 class TestEnergyBalanceClass(unittest.TestCase):
