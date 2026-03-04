@@ -33,6 +33,8 @@ applyTo: "**/*.py, **/*.yaml"
 
 ## Coding conventions
 - Use type hints for all functions.
+- Add docstrings in NumPy-style format
+- Use pyam / pandas idioms instead of manual loops wherever possible 
 - Add docstrings in numpy-style format
 - Use pyam / pandas idioms instead of manual loops wherever possible 
 
