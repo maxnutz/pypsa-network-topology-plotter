@@ -1,0 +1,6 @@
+- Secondary Energy|Electricity:
+    description: Total net generation of electricity (including transmission losses)
+    unit: TWh
+- Secondary Energy|Electricity|{Electricity Generation by Source}:
+    description: Total net generation of electricity from {Electricity Generation by Source}
+    unit: TWh

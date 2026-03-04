@@ -1,0 +1,17 @@
+- Final Energy:
+    description: Final energy consumption by all end-use sectors and all fuels
+      excluding transmission/distribution losses
+    unit: TJ
+- Final Energy [by Carrier]|{Final Energy Carrier}:
+    description: Energy consumption of {Final Energy Carrier}
+      excluding transmission/distribution losses
+    unit: TJ
+- Final Energy [by Sector]|{Sector}:
+    description: Energy consumption by the {Sector}
+      excluding transmission/distribution losses
+    unit: TJ
+- Final Energy [by Sector]|{Sector}|{Final Energy Carrier}:
+    description: Energy consumption of {Final Energy Carrier} by the {Sector}
+      excluding transmission/distribution losses
+    unit: TJ
+
