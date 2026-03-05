@@ -314,7 +314,7 @@ def fetch_and_load_tsv_data(filepath_tsv: str | None = None) -> pd.DataFrame:
             df[year_col] = pd.to_numeric(
                 df[year_col].replace(":", np.nan), errors="coerce"
             )
-
+    df = df[df["unit"] == "GWH"]
     return df
 
 
