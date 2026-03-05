@@ -1,0 +1,4 @@
+pandas>=1.0.0
+numpy>=1.18.0
+pyyaml>=5.3
+pypsa>=0.18.0
