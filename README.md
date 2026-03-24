@@ -1,121 +1,141 @@
-# Module for evaluation of energy flows
-- evaluation of [eurostat energy balances](https://ec.europa.eu/eurostat/web/energy/database/additional-data#Energy%20balances)
-- focused on Austria
-- evaluation of pypsa-energy flows
-- visualization of network topology
+# pypsa Network Topology Visualiser
 
-## Evaluation of pypsa-Network
-> ### class `CarrierNetwork`
-> Basis Class for evaluating the pypsa-network per carrier
+Visualise the network topology of [pypsa](https://pypsa.org/) networks as
+[Mermaid](https://mermaid.js.org/) diagrams.
 
-- **carrier (_str_):** Carrier of network to evaluate
-- **n (_pypsa.network_):** pypsa-network to be evaluated
-- eval_one_node (_bool, default: False_): If true, reduces network to be evaluated to one location (eg. AT0 0) and the respective busses connected to the carriers bus at that location. When carriers bus is located at EU - level, a large output-network is unavoidable
-- search_therm (_bool | str, default None_): The search term to be used for reducing the network to one location. Takes the first bus in the pypsa-network as defualt, whenever a specific location is to be evaluated, specify here (eg. AT0). To find the corresponding buses, the carrier name is added to the given search string.
-- png_outputfolder_path (_str, default: None_): path to outputfolder to save network topology plots in. mandatory, whenever plot_subnetwork is set to True.
-- plot_subnetwork (_bool, default: True_): if True, plots topology of specified subnetwork of given pypsa-network and returns as png.
-- return_mermaid_code (_bool, default: False_): if true, saves mermaid-code used for network-topology-plot to png_outputfolder_path
+---
 
-###### Attributes
-- carrier (_str_)
-    The name of the carrier for which the network should be evaluated.
-- n : (_pypsa.Network_)
-    The network object to be evaluated.
-- generators : (_pandas.DataFrame_)
-    A DataFrame containing the generators of the carrier.
-- buses : (_pandas.DataFrame_)
-    A DataFrame containing the buses of the carrier.
-- links : (_pandas.DataFrame_)
-    A DataFrame containing the links of the carrier.
-- lines : (_pandas.DataFrame_)
-    A DataFrame containing the lines of the carrier.
-- stores : (_pandas.DataFrame_)
-    A DataFrame containing the stores of the carrier.
-- storage_units : (_pandas.DataFrame_)
-    A DataFrame containing the storage units of the carrier.
-- loads : (_pandas.DataFrame_)
-    A DataFrame containing the loads of the carrier.
-- processes : (_pandas.DataFrame_)
-    A DataFrame containing the processes of the carrier.
+## Installation
 
-> ### function `eval_all_networks`
-> evaluates given network for all carriers in the respective network
-- **n (_pypsa.network_):** pypsa-network to be evaluated
-- png_outputfolder_path (_str, default: None_): path to outputfolder to save network topology plots in
-- - eval_one_node (_bool, default: True_): If true, reduces network to be evaluated to one location (eg. AT0 0) and the respective busses connected to the carriers bus at that location. When carriers bus is located at EU - level, a large output-network is unavoidable
- 
-###### Returns
-- (_list_) List of all carriers, the evaluation was not possible: Inluding carriers, no busses or elements are available in the given network.
-
-### Network Topology
-Generates the network topology for the given carrier reading out generators, buses, links, lines, stores, storage units and loads in the reduced network of the CarrierNetwork-class 
-- multilink-processes: process to bus1is marked as "indirect"
-- Generators, loads, storage_units having the same carrier are specified by a thick connection to the respective bus
-
-> [!NOTE]
-> elements with different carriers are not displayed in the network plot, when there is no direct conversion with a link representing a conversion process.
-
-- whenever the mermaid code is too long to be processed by the API, the code is returned in a txt-file to be manually processed.
-- when the buses carrier is of EU-level or model-wide level, the plot will get huge, as links/lines to all other nodes are integrated. 
-![methanol_small](https://github.com/user-attachments/assets/70a3239c-5d6c-4ffd-9c80-6e852fe54f53)
-
-## Evaluation of Energy Balance
-> [!WARNING]
-> Written by LLM, only checked for accuracy
-
-> ### class `EnergyBalanceEval`
-> Basis Class for evaluating the energy balance data
-
-- **year (_int_):** Year of the energy balance data to evaluate &rarr; used to specify sheet name
-- **path_to_xlsb (_str,_):** Path to the Excel file containing the energy balance data
-- country (_str, default: "AT"_): Country of the energy balance data
-- input_matrix (_pandas.DataFrame | None, default: None_): Input DataFrame containing the energy balance data
-- original_input (_bool, default: True_): Flag indicating whether to use the original input DataFrame or a modified version
-
-###### Attributes
-- **df_eb** (_pandas.Dataframe_): import of energy balance file with multilayer index 
-
-###### Methods
-- **get_top_layer_entries(_only_total_values: bool = False_) -> pandas.DataFrame:** Get all top layer entries with number values.
-    - **Inputs:**
-        - only_total_values (_bool, default: False_): Only return column TOTAL
-    - **Outputs:**
-        - pandas.DataFrame
-
-- **get_entries_of_category(_category: str, only_total_values: bool = False, drop_multilayer: bool = False_) -> pandas.DataFrame:** Get all entries of a given category.
-    - **Inputs:**
-        - category (_str_): One of the top layer categories
-        - only_total_values (_bool, default: False_): Only return column TOTAL
-        - drop_multilayer (_bool, default: False_): Drop multi-layer structure and return flat DataFrame
-    - **Outputs:**
-        - pandas.DataFrame
-- **select(_search_string: str = None, depth: int | None = None, only_return_index: bool = False, drop_multilayer: bool = False_) -> pd.DataFrame:** get entries of a given search therm
-    - **Inputs**:
-        - search_string: string to search for (str, default: None)
-        - depth: depth level to filter by (int, default: None)
-        - only_return_index: only return index values (bool, default: False)
-        - drop_multilayer: drop multi-layer structure and return flat DataFrame (bool, default: False)
-        **Ether search_string or depth must be provided.**
-    - **Outputs**:
-        - matching rows as pandas DataFrame.
-        - ValueError if no matches found.
-     
-### Dataframe `df_eb`
-- holds all filled columns of corresponding excel sheet
-- Multilayer index: `[layer_0, layer_1, layer_2]` representing the different columns ABC of original file
-- `var_name`: consists of multiindex-elements connected with ">" to recieve a unique naming of variable
-- `+/-`: Indicates input/output - taken from column A of original sheet
-- `depth`: depth of index representing the hierachical structure of the indexing.
-<img width="1022" height="517" alt="Screenshot from 2025-10-30 11-38-43" src="https://github.com/user-attachments/assets/72344d4a-e455-412b-8896-cad2dac7f7ea" />
-
-<details><summary>statement for this outcome</summary>
-
-```python
-eb = EnergyBalance("2023")
-eb.select(search_string="Final energy consumption")[
-    ["var_name", "index", "TOTAL", "+/-", "depth"]
-]
+```bash
+pip install .
 ```
 
-</details>
+---
 
+## CLI usage
+
+After installation the `pypsa-topology` command is available:
+
+```bash
+pypsa-topology <path_to_pypsa_file> <carrier>
+```
+
+| Argument            | Description                                    |
+|---------------------|------------------------------------------------|
+| `path_to_pypsa_file`| Path to the pypsa network file (`.nc` / `.h5`) |
+| `carrier`           | Carrier name to evaluate                       |
+
+The Mermaid code is written to `resources/<carrier>.txt` relative to the
+current working directory.
+
+> **Note** – The `resources/` folder is excluded from git tracking and will be
+> created automatically the first time the tool runs.
+
+---
+
+## Python API
+
+### `CarrierNetwork`
+
+Evaluate and optionally visualise the sub-network for a single carrier.
+
+```python
+import pypsa
+from energy_balance_evaluation import CarrierNetwork
+
+n = pypsa.Network("my_network.nc")
+
+# Only build the sub-network DataFrames – no plot
+cn = CarrierNetwork(carrier="gas", n=n, plot_subnetwork=False)
+
+# Get the Mermaid code as a string
+print(cn.get_mermaid_string())
+
+# Build sub-network AND save a PNG (requires internet connection)
+cn = CarrierNetwork(
+    carrier="gas",
+    n=n,
+    png_outputfolder_path="resources",
+    plot_subnetwork=True,
+    return_mermaid_code=True,   # also save the .txt Mermaid code
+)
+```
+
+**Parameters**
+
+| Parameter              | Type               | Default | Description |
+|------------------------|--------------------|---------|-------------|
+| `carrier`              | `str`              | –       | Carrier to evaluate |
+| `n`                    | `pypsa.Network`    | –       | Network to evaluate |
+| `eval_one_node`        | `bool`             | `False` | Reduce to one geographical node |
+| `search_therm`         | `bool \| str`      | `None`  | Node identifier for `eval_one_node` |
+| `png_outputfolder_path`| `str`              | `None`  | Output folder for PNG (required when `plot_subnetwork=True`) |
+| `plot_subnetwork`      | `bool`             | `True`  | Generate and save a PNG topology plot |
+| `return_mermaid_code`  | `bool`             | `False` | Also save raw Mermaid code as `.txt` |
+
+**Attributes**
+
+| Attribute        | Type                   | Description                         |
+|------------------|------------------------|-------------------------------------|
+| `carrier`        | `str`                  | Carrier name                        |
+| `n`              | `pypsa.Network`        | The evaluated network               |
+| `generators`     | `pandas.DataFrame`     | Generators of the carrier           |
+| `buses`          | `pandas.DataFrame`     | Buses of the carrier                |
+| `links`          | `pandas.DataFrame`     | Links connected to the carrier buses|
+| `lines`          | `pandas.DataFrame`     | Lines connected to the carrier buses|
+| `stores`         | `pandas.DataFrame`     | Stores of the carrier               |
+| `storage_units`  | `pandas.DataFrame`     | Storage units of the carrier        |
+| `loads`          | `pandas.DataFrame`     | Loads of the carrier                |
+| `processes`      | `numpy.ndarray`        | Carrier labels of links and lines   |
+
+---
+
+### `CarriersNetwork`
+
+Base class used by `CarrierNetwork`.  Can be used directly when the PNG
+rendering step is not needed.
+
+```python
+from energy_balance_evaluation import CarriersNetwork
+
+cn = CarriersNetwork(carrier="gas", n=n)
+mermaid_code = cn.get_mermaid_string()
+```
+
+---
+
+### `eval_all_networks`
+
+Evaluate all carriers in a network and save topology plots.
+
+```python
+from energy_balance_evaluation import eval_all_networks
+
+failed = eval_all_networks(
+    n,
+    png_outputfolder_path="resources",
+    eval_one_node=True,
+    return_mermaid_code=True,
+)
+print("Failed carriers:", failed)
+```
+
+---
+
+## Network Topology diagram
+
+The topology diagram shows:
+
+- **Buses** (triple circles `((( )))`) – the carrier's main buses
+- **Generators** (rectangles `[ ]`) – connected to their bus with a thick edge (`===`)
+- **Loads** (rounded rectangles `( )`) – connected to their bus with a thick edge
+- **Storage units** – connected to their bus with a thick edge
+- **Links** – shown as labelled directed edges (`-- label -->`)
+  - Multi-link bus2 connections are marked *indirect*
+- **Lines** – shown as labelled directed edges
+
+> When the Mermaid code is too large for the URI-based rendering API, the
+> raw code is saved to a `.txt` file for manual rendering.
+
+![methanol_small](https://github.com/user-attachments/assets/70a3239c-5d6c-4ffd-9c80-6e852fe54f53)
