@@ -16,6 +16,7 @@ class CarriersNetwork:
         n: pypsa.Network,
         eval_one_node: bool = False,
         search_therm: bool | str = None,
+        bus_pattern: str | None = None,
     ):
         """
         Initialises the CarriersNetwork class.
@@ -31,6 +32,12 @@ class CarriersNetwork:
         search_therm : bool | str, optional
             The search term to be used when reducing the network to one node.
             Defaults to None.
+        bus_pattern : str or None, optional
+            When provided, only buses whose index contains *bus_pattern* (and
+            all components connected to those buses) are kept.  This allows
+            restricting the topology plot to a sub-set of the carrier network,
+            for example ``bus_pattern="AT0"`` to focus on a specific region.
+            Defaults to None (no filtering).
 
         Attributes
         ----------
@@ -60,6 +67,8 @@ class CarriersNetwork:
             self.processes = self.get_all_processes()
             if eval_one_node:
                 self.reduce_to_one_node(search_therm)
+            if bus_pattern is not None:
+                self.filter_by_bus_pattern(bus_pattern)
 
     def reduce_to_one_node(self, search_therm: str | None) -> None:
         """
@@ -116,6 +125,50 @@ class CarriersNetwork:
                 " " + self.carrier, ""
             )
             self.search_string = self.buses.index.unique()[0]
+
+    def filter_by_bus_pattern(self, bus_pattern: str) -> None:
+        """
+        Restrict the network to buses whose index contains *bus_pattern*.
+
+        All components (generators, loads, stores, storage units) that are
+        attached to a matching bus are kept.  Links and lines are kept when
+        at least one of their bus endpoints matches the pattern.
+
+        Parameters
+        ----------
+        bus_pattern : str
+            Substring to search for in bus indices (case-sensitive).
+        """
+        self.buses = self.buses[self.buses.index.str.contains(bus_pattern)]
+        if self.buses.empty:
+            raise ValueError(
+                f"No buses matching pattern '{bus_pattern}' found for carrier "
+                + self.carrier
+            )
+        self.generators = self.generators[
+            self.generators.bus.isin(self.buses.index)
+        ]
+        self.loads = self.loads[self.loads.bus.isin(self.buses.index)]
+        self.stores = self.stores[self.stores.bus.isin(self.buses.index)]
+        self.storage_units = self.storage_units[
+            self.storage_units.bus.isin(self.buses.index)
+        ]
+        link_frames = [
+            self.links[self.links.bus0.isin(self.buses.index)],
+            self.links[self.links.bus1.isin(self.buses.index)],
+        ]
+        if "bus2" in self.links.columns:
+            link_frames.append(
+                self.links[self.links.bus2.isin(self.buses.index)]
+            )
+        self.links = pd.concat(link_frames).drop_duplicates()
+        self.lines = pd.concat(
+            [
+                self.lines[self.lines.bus0.isin(self.buses.index)],
+                self.lines[self.lines.bus1.isin(self.buses.index)],
+            ]
+        ).drop_duplicates()
+        self.processes = self.get_all_processes()
 
     def get_generators(self) -> pd.DataFrame:
         """Return generators whose carrier matches this carrier."""

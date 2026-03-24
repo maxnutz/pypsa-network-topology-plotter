@@ -18,16 +18,26 @@ pip install .
 After installation the `pypsa-topology` command is available:
 
 ```bash
-pypsa-topology <path_to_pypsa_file> <carrier>
+pypsa-topology <path_to_pypsa_file> <carrier> [--bus-pattern PATTERN]
 ```
 
-| Argument            | Description                                    |
-|---------------------|------------------------------------------------|
-| `path_to_pypsa_file`| Path to the pypsa network file (`.nc` / `.h5`) |
-| `carrier`           | Carrier name to evaluate                       |
+| Argument              | Description                                                              |
+|-----------------------|--------------------------------------------------------------------------|
+| `path_to_pypsa_file`  | Path to the pypsa network file (`.nc` / `.h5`)                           |
+| `carrier`             | Carrier name to evaluate                                                  |
+| `--bus-pattern PATTERN` | *(optional)* Restrict the output to buses whose name contains *PATTERN* |
 
-The Mermaid code is written to `resources/<carrier>.txt` relative to the
-current working directory.
+The Mermaid code is always written to `resources/<carrier>.txt`.  
+A PNG render is attempted via [mermaid.ink](https://mermaid.ink) and saved as
+`resources/<carrier>.png` when the diagram is not too large.
+
+```bash
+# Full network for carrier "gas"
+pypsa-topology network.nc gas
+
+# Only buses matching "AT0" (e.g. regional sub-set)
+pypsa-topology network.nc gas --bus-pattern AT0
+```
 
 > **Note** – The `resources/` folder is excluded from git tracking and will be
 > created automatically the first time the tool runs.
@@ -52,6 +62,9 @@ cn = CarrierNetwork(carrier="gas", n=n, plot_subnetwork=False)
 # Get the Mermaid code as a string
 print(cn.get_mermaid_string())
 
+# Restrict to buses whose name contains "AT0"
+cn = CarrierNetwork(carrier="gas", n=n, bus_pattern="AT0", plot_subnetwork=False)
+
 # Build sub-network AND save a PNG (requires internet connection)
 cn = CarrierNetwork(
     carrier="gas",
@@ -70,6 +83,7 @@ cn = CarrierNetwork(
 | `n`                    | `pypsa.Network`    | –       | Network to evaluate |
 | `eval_one_node`        | `bool`             | `False` | Reduce to one geographical node |
 | `search_therm`         | `bool \| str`      | `None`  | Node identifier for `eval_one_node` |
+| `bus_pattern`          | `str \| None`      | `None`  | Optional substring to filter buses (e.g. `"AT0"`) |
 | `png_outputfolder_path`| `str`              | `None`  | Output folder for PNG (required when `plot_subnetwork=True`) |
 | `plot_subnetwork`      | `bool`             | `True`  | Generate and save a PNG topology plot |
 | `return_mermaid_code`  | `bool`             | `False` | Also save raw Mermaid code as `.txt` |
@@ -101,6 +115,9 @@ from energy_balance_evaluation import CarriersNetwork
 
 cn = CarriersNetwork(carrier="gas", n=n)
 mermaid_code = cn.get_mermaid_string()
+
+# Filter to a specific region
+cn_at0 = CarriersNetwork(carrier="gas", n=n, bus_pattern="AT0")
 ```
 
 ---

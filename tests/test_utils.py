@@ -96,5 +96,80 @@ class TestCarriersNetworkInit(unittest.TestCase):
         self.assertIn("bus_gas_0", mermaid)
 
 
+class TestCarriersNetworkBusPattern(unittest.TestCase):
+    """Test bus_pattern filtering in CarriersNetwork."""
+
+    def _make_network(self):
+        """Network with two buses: bus_gas_AT0 and bus_gas_AT1."""
+        n = pypsa.Network()
+        n.add("Carrier", "gas")
+        n.add("Bus", "bus_gas_AT0", carrier="gas")
+        n.add("Bus", "bus_gas_AT1", carrier="gas")
+        n.add("Generator", "gen_AT0", bus="bus_gas_AT0", carrier="gas", p_nom=100)
+        n.add("Generator", "gen_AT1", bus="bus_gas_AT1", carrier="gas", p_nom=50)
+        n.add("Load", "load_AT0", bus="bus_gas_AT0", carrier="gas", p_set=80)
+        n.add(
+            "Link",
+            "link_AT0_AT1",
+            bus0="bus_gas_AT0",
+            bus1="bus_gas_AT1",
+            carrier="gas",
+            p_nom=60,
+        )
+        return n
+
+    def test_bus_pattern_filters_buses(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network()
+        cn = CarriersNetwork("gas", n, bus_pattern="AT0")
+        # Only AT0 bus should be present
+        self.assertTrue(all("AT0" in idx for idx in cn.buses.index))
+
+    def test_bus_pattern_filters_generators(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network()
+        cn = CarriersNetwork("gas", n, bus_pattern="AT0")
+        # Only generator attached to AT0 bus
+        self.assertEqual(len(cn.generators), 1)
+        self.assertEqual(cn.generators.index[0], "gen_AT0")
+
+    def test_bus_pattern_filters_loads(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network()
+        cn = CarriersNetwork("gas", n, bus_pattern="AT0")
+        self.assertEqual(len(cn.loads), 1)
+        self.assertEqual(cn.loads.index[0], "load_AT0")
+
+    def test_bus_pattern_keeps_connected_links(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network()
+        cn = CarriersNetwork("gas", n, bus_pattern="AT0")
+        # The link between AT0 and AT1 should still be visible
+        self.assertFalse(cn.links.empty)
+
+    def test_bus_pattern_no_match_raises(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network()
+        with self.assertRaises(Exception):
+            CarriersNetwork("gas", n, bus_pattern="NONEXISTENT")
+
+    def test_bus_pattern_mermaid_excludes_other_bus(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network()
+        cn_full = CarriersNetwork("gas", n)
+        cn_filtered = CarriersNetwork("gas", n, bus_pattern="AT0")
+        mermaid_full = cn_full.get_mermaid_string()
+        mermaid_filtered = cn_filtered.get_mermaid_string()
+        # gen_AT1 should appear in full but not in filtered
+        self.assertIn("gen_AT1", mermaid_full)
+        self.assertNotIn("gen_AT1", mermaid_filtered)
+
+
 if __name__ == "__main__":
     unittest.main()
