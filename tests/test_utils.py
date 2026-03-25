@@ -171,5 +171,78 @@ class TestCarriersNetworkBusPattern(unittest.TestCase):
         self.assertNotIn("gen_AT1", mermaid_filtered)
 
 
+class TestMultiLink(unittest.TestCase):
+    """Test that bus3 / bus4 multilinks are fully handled."""
+
+    def _make_network_with_multilink(self):
+        """Network with a 4-port link (bus0..bus3) and a 5-port link (bus0..bus4)."""
+        n = pypsa.Network()
+        n.add("Carrier", "gas")
+        for i in range(5):
+            n.add("Bus", f"bus_gas_{i}", carrier="gas")
+
+        # 4-port link: bus0, bus1, bus2, bus3
+        n.add(
+            "Link",
+            "link_4port",
+            bus0="bus_gas_0",
+            bus1="bus_gas_1",
+            bus2="bus_gas_2",
+            bus3="bus_gas_3",
+            carrier="gas",
+            p_nom=100,
+        )
+        # 5-port link: bus0, bus1, bus2, bus3, bus4
+        n.add(
+            "Link",
+            "link_5port",
+            bus0="bus_gas_0",
+            bus1="bus_gas_1",
+            bus2="bus_gas_2",
+            bus3="bus_gas_3",
+            bus4="bus_gas_4",
+            carrier="gas",
+            p_nom=50,
+        )
+        return n
+
+    def test_get_links_includes_bus3_and_bus4(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network_with_multilink()
+        cn = CarriersNetwork("gas", n)
+        self.assertFalse(cn.links.empty)
+        self.assertIn("link_4port", cn.links.index)
+        self.assertIn("link_5port", cn.links.index)
+
+    def test_extra_bus_cols_detects_bus3_bus4(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network_with_multilink()
+        cn = CarriersNetwork("gas", n)
+        extra = cn._extra_bus_cols(cn.links)
+        self.assertIn("bus2", extra)
+        self.assertIn("bus3", extra)
+        self.assertIn("bus4", extra)
+
+    def test_mermaid_string_contains_bus3_and_bus4(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network_with_multilink()
+        cn = CarriersNetwork("gas", n)
+        mermaid = cn.get_mermaid_string()
+        self.assertIn("bus_gas_3", mermaid)
+        self.assertIn("bus_gas_4", mermaid)
+
+    def test_mermaid_string_indirect_edge_label_for_bus3(self):
+        from energy_balance_evaluation.utils import CarriersNetwork
+
+        n = self._make_network_with_multilink()
+        cn = CarriersNetwork("gas", n)
+        mermaid = cn.get_mermaid_string()
+        self.assertIn("indirect bus3", mermaid)
+        self.assertIn("indirect bus4", mermaid)
+
+
 if __name__ == "__main__":
     unittest.main()

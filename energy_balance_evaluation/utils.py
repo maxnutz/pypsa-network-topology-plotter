@@ -90,11 +90,11 @@ class CarriersNetwork:
             self.links[self.links.bus0.str.contains(self.search_string)],
             self.links[self.links.bus1.str.contains(self.search_string)],
         ]
-        if "bus2" in self.links.columns:
+        for col in self._extra_bus_cols(self.links):
             link_frames.append(
-                self.links[self.links.bus2.str.contains(self.search_string)]
+                self.links[self.links[col].str.contains(self.search_string)]
             )
-        self.links = pd.concat(link_frames)
+        self.links = pd.concat(link_frames).drop_duplicates()
         self.lines = pd.concat(
             [
                 self.lines[self.lines.bus0.str.contains(self.search_string)],
@@ -157,10 +157,8 @@ class CarriersNetwork:
             self.links[self.links.bus0.isin(self.buses.index)],
             self.links[self.links.bus1.isin(self.buses.index)],
         ]
-        if "bus2" in self.links.columns:
-            link_frames.append(
-                self.links[self.links.bus2.isin(self.buses.index)]
-            )
+        for col in self._extra_bus_cols(self.links):
+            link_frames.append(self.links[self.links[col].isin(self.buses.index)])
         self.links = pd.concat(link_frames).drop_duplicates()
         self.lines = pd.concat(
             [
@@ -200,15 +198,44 @@ class CarriersNetwork:
             ]
         return buses_carrier
 
+    @staticmethod
+    def _extra_bus_cols(links_df: pd.DataFrame) -> list:
+        """
+        Return the sorted list of additional bus columns in *links_df*.
+
+        Extra bus columns are those named ``busN`` for N >= 2 that are present
+        in *links_df* and contain at least one non-empty value.  The regex
+        approach handles non-sequential column numbering correctly.
+
+        Parameters
+        ----------
+        links_df : pandas.DataFrame
+            Links DataFrame (e.g. ``self.links`` or ``self.n.links``).
+
+        Returns
+        -------
+        list of str
+            Column names such as ``['bus2', 'bus3', 'bus4']``, sorted by N.
+        """
+        import re
+
+        cols = [
+            col
+            for col in links_df.columns
+            if re.match(r"^bus([2-9]|[1-9]\d+)$", col)
+            and links_df[col].ne("").any()
+        ]
+        return sorted(cols, key=lambda c: int(c[3:]))
+
     def get_links(self) -> pd.DataFrame:
         """Return links connected to the carrier buses."""
         frames = [
             self.n.links[self.n.links.bus0.isin(self.buses.index)],
             self.n.links[self.n.links.bus1.isin(self.buses.index)],
         ]
-        if "bus2" in self.n.links.columns:
-            frames.append(self.n.links[self.n.links.bus2.isin(self.buses.index)])
-        return pd.concat(frames)
+        for col in self._extra_bus_cols(self.n.links):
+            frames.append(self.n.links[self.n.links[col].isin(self.buses.index)])
+        return pd.concat(frames).drop_duplicates()
 
     def get_lines(self) -> pd.DataFrame:
         """Return lines connected to the carrier buses."""
@@ -347,8 +374,8 @@ class CarriersNetwork:
         )
         # buses reachable via links
         list_of_buses = list(self.links.bus0.values) + list(self.links.bus1.values)
-        if "bus2" in self.links.columns:
-            list_of_buses += list(self.links.bus2.values)
+        for col in self._extra_bus_cols(self.links):
+            list_of_buses += list(self.links[col].values)
         cleaned_list_of_buses = [v for v in list_of_buses if v != ""]
         mermaid_code.append(
             [
@@ -367,17 +394,17 @@ class CarriersNetwork:
                 for index, row in self.links.iterrows()
             ]
         )
-        if "bus2" in self.links.columns:
+        for col in self._extra_bus_cols(self.links):
             mermaid_code.append(
                 [
                     "BUS_"
                     + row.bus0.replace(" ", "_")
                     + "-- "
                     + index
-                    + " indirect -->BUS_"
-                    + row.bus2.replace(" ", "_")
+                    + f" indirect {col} -->BUS_"
+                    + row[col].replace(" ", "_")
                     for index, row in self.links.iterrows()
-                    if row.bus2 != ""
+                    if row[col] != ""
                 ]
             )
         # buses and edges from lines
