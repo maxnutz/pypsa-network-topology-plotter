@@ -6,7 +6,11 @@ Visualise the network topology of [pypsa](https://pypsa.org/) networks as
 ---
 
 ## Installation
-
+Install directly from GitHub
+```bash
+pip install git+https://github.com/maxnutz/pypsa-network-topology-plotter
+```
+Or clone locally and install with
 ```bash
 pip install .
 ```
