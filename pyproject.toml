@@ -4,22 +4,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "energy_balance_evaluation"
-version = "0.1.1"
-description = "A package to evaluate eurostat energy balance data for validation of pypsa-Networks"
+version = "0.2.0"
+description = "Visualise the network topology of pypsa networks using Mermaid diagrams"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [
     {name = "Max Nutz", email = "max.nutz@boku.ac.at"}
 ]
 dependencies = [
     "pandas>=1.0.0",
     "numpy>=1.18.0",
-    "pyyaml>=5.3",
     "pypsa>=0.18.0",
+    "Pillow>=9.0.0",
+    "requests>=2.0.0",
+    "matplotlib>=3.0.0",
 ]
+
+[project.scripts]
+pypsa-topology = "energy_balance_evaluation.pypsa_network_eval:main"
 
 [project.urls]
 Homepage = "https://github.com/maxnutz/energy_balance_evaluation"
 
 [tool.setuptools.packages.find]
 include = ["energy_balance_evaluation"]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+energy_balance_evaluation = { path = ".", editable = true }
+
+[tool.pixi.tasks]

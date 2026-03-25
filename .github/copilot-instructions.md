@@ -7,17 +7,14 @@ applyTo: "**/*.py, **/*.yaml"
 > This is an AGENT.md - file for AI agents, specifically for Copilot in this case. It is used to provide instructions to the AI agent on how to interact with project and developers.
 
 ## Aim of the project
-- Create a consistent set of well-designed variables to be used for Energy Data Validation
-- use the nomenclature-package and the pyam-package to implement a validation process for outputs of an Energy System Model and provide a technically processable output of this validation-process.
-- use consistent and generally applicable variables and definitions in the IAMC-Format
+- Plot pypsa-network-topology in mermaid-code for a carrier provided.
+- Include all links, lines, generators, loads, stores and storage units for the user to get a complete picture of the network.
+- Account for potential filtering of buses by provided information.
+- serve the user with a txt-file or - if possible - with a png file of the topology.
 
 ## Folder Structure
-- `energy_balance_evaluation`: Contains the package code for evaluating the Eurostat Energy Balance data and for evaluation of pypsa-at/pypsa-de/pypsa-eur networks 
-- `definitions`: Contains the variable-definition in IAMC-format following the structure of the `nomenclature` package. 
-- `resources`: input-resources for processing
-    - `eurostat_nrg_present.csv`: nrg-Definition of Eurostat variables
-    - `eurostat_siec_present.csv`: siec-Definition of Eurostat variables
-    - `adriane_variables.yaml`: a set of variables to be used as basis for the definitions/variable/variables.yaml - variables.
+- `energy_balance_evaluation`: Contains the package code
+- `resources`: non-verisoneered resources and outputs.
 - `tests`: package testing code.
 - `sister_packages`: folder holding packages that may be useful for the creation of energy_balance_evaluation. DO NOT change anything in here.
 
