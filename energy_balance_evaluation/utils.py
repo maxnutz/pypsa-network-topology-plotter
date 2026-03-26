@@ -311,7 +311,8 @@ class CarriersNetwork:
         When the number of primary carrier buses (:attr:`buses`) exceeds
         :attr:`_BUS_LIMIT_TRIGGER` (default 7), the list is truncated to the
         first :attr:`_BUS_LIMIT_TARGET` (default 5) buses.  An absolute hard
-        cap of :attr:`_BUS_HARD_CAP` (default 12) is always enforced.
+        cap of :attr:`_BUS_HARD_CAP` (default 12) is always enforced on both
+        primary buses and the total buses displayed in the diagram.
 
         After trimming all component DataFrames are updated via
         :meth:`_refilter_by_buses` to stay consistent.
@@ -323,6 +324,106 @@ class CarriersNetwork:
         elif n > self._BUS_LIMIT_TRIGGER:
             self.buses = self.buses.iloc[: self._BUS_LIMIT_TARGET]
             self._refilter_by_buses()
+
+        # Also enforce hard cap on total buses shown in diagram (including secondary buses)
+        self._enforce_diagram_bus_cap()
+
+    def _enforce_diagram_bus_cap(self) -> None:
+        """
+        Enforce hard cap on total buses displayed in the diagram.
+
+        Counts all buses that would appear in the final mermaid diagram
+        (primary buses plus secondary buses from links/lines). If the total
+        exceeds :attr:`_BUS_HARD_CAP`, keeps primary buses and instead limits
+        the links/lines to ensure the diagram stays within limits.
+        """
+        # Collect all buses that would appear in the diagram
+        diagram_buses: set = set(self.buses.index)
+
+        # Add secondary buses from links
+        if not self.links.empty:
+            diagram_buses.update(self.links.bus0.values)
+            diagram_buses.update(self.links.bus1.values)
+            for col in self._extra_bus_cols(self.links):
+                bus_vals = self.links[col].values
+                diagram_buses.update([b for b in bus_vals if b != ""])
+
+        # Add secondary buses from lines
+        if not self.lines.empty:
+            diagram_buses.update(self.lines.bus0.values)
+            diagram_buses.update(self.lines.bus1.values)
+
+        # Remove empty strings
+        diagram_buses.discard("")
+        total_buses = len(diagram_buses)
+
+        # If total buses exceed hard cap, trim links and lines to reduce diagram size
+        if total_buses > self._BUS_HARD_CAP:
+            # Strategy: keep only links/lines that connect to the first N primary buses
+            # and limit secondary buses to reach the hard cap
+            remaining_cap = self._BUS_HARD_CAP - len(self.buses)
+            
+            if remaining_cap < 0:
+                # Primary buses alone exceed cap - this shouldn't happen after _apply_bus_limit
+                return
+            
+            # Keep track of which secondary buses are connected
+            secondary_buses: set = set()
+            kept_links = []
+            kept_lines = []
+            
+            # First pass: keep links to primary buses, stop when we reach the cap
+            if not self.links.empty:
+                for idx, row in self.links.iterrows():
+                    if len(secondary_buses) >= remaining_cap:
+                        break
+                    
+                    # Count new buses this link would add
+                    new_buses = set()
+                    if row.bus0 not in self.buses.index:
+                        new_buses.add(row.bus0)
+                    if row.bus1 not in self.buses.index:
+                        new_buses.add(row.bus1)
+                    for col in self._extra_bus_cols(self.links):
+                        if pd.notna(row[col]) and row[col] != "" and row[col] not in self.buses.index:
+                            new_buses.add(row[col])
+                    
+                    # Only keep this link if it doesn't exceed capacity
+                    if len(secondary_buses) + len(new_buses) <= remaining_cap:
+                        kept_links.append(idx)
+                        secondary_buses.update(new_buses)
+            
+            # Second pass: keep lines, stop when we reach the cap
+            if not self.lines.empty:
+                for idx, row in self.lines.iterrows():
+                    if len(secondary_buses) >= remaining_cap:
+                        break
+                    
+                    # Count new buses this line would add
+                    new_buses = set()
+                    if row.bus0 not in self.buses.index:
+                        new_buses.add(row.bus0)
+                    if row.bus1 not in self.buses.index:
+                        new_buses.add(row.bus1)
+                    
+                    # Only keep this line if it doesn't exceed capacity
+                    if len(secondary_buses) + len(new_buses) <= remaining_cap:
+                        kept_lines.append(idx)
+                        secondary_buses.update(new_buses)
+            
+            # Update links and lines to only kept entries
+            if kept_links:
+                self.links = self.links.loc[kept_links]
+            else:
+                self.links = pd.DataFrame(columns=self.links.columns)
+            
+            if kept_lines:
+                self.lines = self.lines.loc[kept_lines]
+            else:
+                self.lines = pd.DataFrame(columns=self.lines.columns)
+            
+            # Rebuild processes since links/lines have changed
+            self.processes = self.get_all_processes()
 
     def get_generators(self) -> pd.DataFrame:
         """
@@ -652,12 +753,9 @@ class CarriersNetwork:
         """
         Return the complete Mermaid flowchart code as a single string.
 
-        Initial components found by the carrier search are highlighted with a
-        pink fill (``#f9d5e5`` / ``#cc0066`` border) via Mermaid ``style``
-        statements appended to the flowchart.  Only components that are
-        actually present in the (possibly filtered) network are highlighted;
-        components removed by ``bus_pattern`` filtering or bus-count limiting
-        do not appear.
+        All components in the network that match the target carrier are
+        highlighted with a pink fill (``#f9d5e5`` / ``#cc0066`` border) via
+        Mermaid ``style`` statements appended to the flowchart.
 
         Returns
         -------
@@ -670,37 +768,39 @@ class CarriersNetwork:
         )
         code = "flowchart LR;\n  " + "\n  ".join(flat)
 
-        # Highlight the initial carrier components that are still in the
-        # (possibly filtered) network.  We intersect initial_components with
-        # the current state so that buses/components removed by bus_pattern
-        # filtering or bus-count limiting do NOT get spurious style entries.
-        if self.initial_components is not None and not self.initial_components.empty:
-            highlight = "fill:#f9d5e5,stroke:#cc0066,stroke-width:2px"
-            style_lines: list[str] = []
+        # Highlight all components that have the target carrier.
+        # This includes buses, generators, loads, stores, storage units,
+        # links, and lines that contain self.carrier.
+        highlight = "fill:#f9d5e5,stroke:#cc0066,stroke-width:2px"
+        style_lines: list[str] = []
 
-            # Map each node-type component to the DataFrame that holds its
-            # current (possibly filtered) state.
-            _node_type_map: dict[str, pd.DataFrame] = {
-                "bus": self.buses,
-                "store": self.stores,
-                "storage_unit": self.storage_units,
-                "generator": self.generators,
-                "load": self.loads,
-            }
+        # Highlight buses with matching carrier
+        for bus_name in self.buses.index:
+                node_id = "BUS_" + bus_name.replace(" ", "_")
+                style_lines.append(f"style {node_id} {highlight}")
 
-            if self.initial_component_type in _node_type_map:
-                current_df = _node_type_map[self.initial_component_type]
-                active = set(self.initial_components.index) & set(current_df.index)
-                prefix = "BUS_" if self.initial_component_type == "bus" else ""
-                for name in active:
-                    node_id = prefix + name.replace(" ", "_")
-                    style_lines.append(f"style {node_id} {highlight}")
-            # For links and lines the thick-arrow edge style applied in
-            # mermaid_carriers_network() serves as the visual highlight;
-            # no additional style statement is needed.
+        # Highlight generators with matching carrier
+        for gen_name in self.generators.index:
+                node_id = gen_name.replace(" ", "_")
+                style_lines.append(f"style {node_id} {highlight}")
 
-            if style_lines:
-                code += "\n  " + "\n  ".join(style_lines)
+        # Highlight loads with matching carrier
+        for load_name in self.loads.index:
+                node_id = load_name.replace(" ", "_")
+                style_lines.append(f"style {node_id} {highlight}")
+
+        # Highlight stores with matching carrier
+        for store_name in self.stores.index:
+                node_id = store_name.replace(" ", "_")
+                style_lines.append(f"style {node_id} {highlight}")
+
+        # Highlight storage units with matching carrier
+        for su_name in self.storage_units.index:
+                node_id = su_name.replace(" ", "_")
+                style_lines.append(f"style {node_id} {highlight}")
+
+        if style_lines:
+            code += "\n  " + "\n  ".join(style_lines)
 
         return code
 
