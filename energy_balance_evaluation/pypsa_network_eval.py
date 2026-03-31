@@ -128,49 +128,31 @@ def eval_all_networks(
     return error_carriers
 
 
-def _parse_carriers(carrier_arg: str) -> list[str]:
-    """Parse the carrier CLI argument into a list of carrier names.
+def _parse_carriers(carrier_args: list[str]) -> list[str]:
+    """Parse carrier arguments from CLI into a list of carrier names.
 
     Accepts the following input forms:
 
-    * Single carrier string: ``gas``
-    * JSON list with quotes: ``'["gas", "coal"]'``
-    * Bare list without outer quotes: ``["gas", "coal"]``
-    * Comma-separated quoted strings without list brackets:
-      ``'"gas", "coal"'``
+    * Single carrier name as one argument: ``gas``
+    * JSON list as one argument with quotes: ``'["gas", "coal"]'``
+    * Space-separated carrier names as multiple arguments: ``gas coal electricity``
+    * Comma-separated quoted strings as one argument: ``'"gas", "coal"'``
+
+    When multiple arguments are provided, they are treated as individual carrier
+    names unless the first (and only) argument is a JSON list or comma-separated
+    quoted string.
 
     Parameters
     ----------
-    carrier_arg : str
-        Raw string value supplied on the command line.
+    carrier_args : list of str
+        One or more carrier arguments supplied on the command line.
 
     Returns
     -------
     list of str
         One or more carrier names to process.
     """
-    stripped = carrier_arg.strip()
-
-    # Form 1 & 2: JSON list (with or without surrounding single-quotes)
-    if stripped.startswith("["):
-        try:
-            parsed = json.loads(stripped)
-            if isinstance(parsed, list) and all(isinstance(c, str) for c in parsed):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
-    # Form 3: comma-separated quoted strings, e.g. '"gas", "coal"'
-    # Wrap in brackets to make it valid JSON and re-try
-    bracketed = f"[{stripped}]"
-    try:
-        parsed = json.loads(bracketed)
-        if isinstance(parsed, list) and len(parsed) > 1 and all(isinstance(c, str) for c in parsed):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-
-    return [carrier_arg]
+    return carrier_args
 
 
 def _process_carrier(
@@ -267,10 +249,12 @@ def main() -> None:
     parser.add_argument(
         "carrier",
         type=str,
+        nargs="+",
         help=(
-            "Carrier name to evaluate (must exist in the network). "
-            "To evaluate multiple carriers pass a JSON list, "
-            "e.g. '[\"gas\", \"coal\"]'."
+            "One or more carrier names to evaluate (must exist in the network). "
+            "Can be supplied as: single name (gas), space-separated names "
+            '(gas coal), or JSON list (\'["gas", "coal"]\'). '
+            'When supplying names with spaces, quote each name (\\"agriculture electricity\\").'
         ),
     )
     parser.add_argument(
