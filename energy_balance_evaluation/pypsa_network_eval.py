@@ -152,7 +152,31 @@ def _parse_carriers(carrier_args: list[str]) -> list[str]:
     list of str
         One or more carrier names to process.
     """
-    return carrier_args
+    # Multiple plain carriers passed as separate positional args (e.g. gas coal)
+    if len(carrier_args) > 1:
+        return list(carrier_args)
+
+    arg = carrier_args[0].strip()
+
+    # JSON list form: '["gas", "coal"]' or ["gas", "coal"] (with or without outer quotes)
+    if arg.startswith("["):
+        try:
+            parsed = json.loads(arg)
+            if isinstance(parsed, list) and all(isinstance(c, str) for c in parsed):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    # Comma-separated quoted strings without brackets: '"gas", "coal"'
+    try:
+        parsed = json.loads(f"[{arg}]")
+        if isinstance(parsed, list) and len(parsed) > 1 and all(isinstance(c, str) for c in parsed):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # Single carrier (plain string or unrecognised form)
+    return list(carrier_args)
 
 
 def _process_carrier(

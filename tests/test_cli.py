@@ -32,9 +32,9 @@ def _make_two_carrier_network() -> pypsa.Network:
 class TestParseCarriers(unittest.TestCase):
     """Unit tests for the _parse_carriers helper."""
 
-    def _fn(self, arg: str):
+    def _fn(self, *args: str):
         from energy_balance_evaluation.pypsa_network_eval import _parse_carriers
-        return _parse_carriers(arg)
+        return _parse_carriers(list(args))
 
     def test_single_carrier_returns_list_of_one(self):
         result = self._fn("gas")
@@ -74,6 +74,11 @@ class TestParseCarriers(unittest.TestCase):
     def test_comma_separated_quoted_strings_with_spaces(self):
         result = self._fn('"agriculture electricity", "agriculture heat"')
         self.assertEqual(result, ["agriculture electricity", "agriculture heat"])
+
+    def test_multiple_plain_positional_args(self):
+        # gas coal electricity – each passed as a separate shell argument
+        result = self._fn("gas", "coal", "electricity")
+        self.assertEqual(result, ["gas", "coal", "electricity"])
 
 
 class TestProcessCarrier(unittest.TestCase):
