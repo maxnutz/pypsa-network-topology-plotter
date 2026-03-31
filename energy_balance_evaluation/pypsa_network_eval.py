@@ -131,8 +131,13 @@ def eval_all_networks(
 def _parse_carriers(carrier_arg: str) -> list[str]:
     """Parse the carrier CLI argument into a list of carrier names.
 
-    The argument may be a single carrier string or a JSON list of carrier
-    strings (e.g. ``'["gas", "coal"]'``).
+    Accepts the following input forms:
+
+    * Single carrier string: ``gas``
+    * JSON list with quotes: ``'["gas", "coal"]'``
+    * Bare list without outer quotes: ``["gas", "coal"]``
+    * Comma-separated quoted strings without list brackets:
+      ``'"gas", "coal"'``
 
     Parameters
     ----------
@@ -145,6 +150,8 @@ def _parse_carriers(carrier_arg: str) -> list[str]:
         One or more carrier names to process.
     """
     stripped = carrier_arg.strip()
+
+    # Form 1 & 2: JSON list (with or without surrounding single-quotes)
     if stripped.startswith("["):
         try:
             parsed = json.loads(stripped)
@@ -152,6 +159,17 @@ def _parse_carriers(carrier_arg: str) -> list[str]:
                 return parsed
         except json.JSONDecodeError:
             pass
+
+    # Form 3: comma-separated quoted strings, e.g. '"gas", "coal"'
+    # Wrap in brackets to make it valid JSON and re-try
+    bracketed = f"[{stripped}]"
+    try:
+        parsed = json.loads(bracketed)
+        if isinstance(parsed, list) and len(parsed) > 1 and all(isinstance(c, str) for c in parsed):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
     return [carrier_arg]
 
 

@@ -61,6 +61,20 @@ class TestParseCarriers(unittest.TestCase):
         result = self._fn("[not valid json")
         self.assertEqual(result, ["[not valid json"])
 
+    def test_bare_list_without_outer_quotes(self):
+        # ["gas", "coal"] – no surrounding single-quotes (shell passes it as-is)
+        result = self._fn('["gas", "coal"]')
+        self.assertEqual(result, ["gas", "coal"])
+
+    def test_comma_separated_quoted_strings(self):
+        # '"gas", "coal"' – quoted strings without list brackets
+        result = self._fn('"gas", "coal"')
+        self.assertEqual(result, ["gas", "coal"])
+
+    def test_comma_separated_quoted_strings_with_spaces(self):
+        result = self._fn('"agriculture electricity", "agriculture heat"')
+        self.assertEqual(result, ["agriculture electricity", "agriculture heat"])
+
 
 class TestProcessCarrier(unittest.TestCase):
     """Tests for _process_carrier – verifies .txt is always written."""
