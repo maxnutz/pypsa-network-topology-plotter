@@ -5,6 +5,10 @@ pypsa_network_eval – CLI and API for pypsa network topology visualisation.
 Usage (command line)
 --------------------
     pypsa-topology <path_to_pypsa_file> <carrier> [--bus-pattern PATTERN]
+                   [--plot-mermaid {True,False}]
+
+    Multiple carriers can be supplied as a JSON list:
+        pypsa-topology network.nc '["gas", "coal"]'
 
     or
 
@@ -12,10 +16,12 @@ Usage (command line)
 
 The Mermaid code is always written to resources/<carrier>.txt relative to the
 current working directory.  A PNG render is attempted and saved as
-resources/<carrier>.png when the diagram is not too large.
+resources/<carrier>.png when the diagram is not too large (unless
+--plot-mermaid False is given).
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import pypsa
@@ -122,14 +128,117 @@ def eval_all_networks(
     return error_carriers
 
 
+def _parse_carriers(carrier_arg: str) -> list[str]:
+    """Parse the carrier CLI argument into a list of carrier names.
+
+    The argument may be a single carrier string or a JSON list of carrier
+    strings (e.g. ``'["gas", "coal"]'``).
+
+    Parameters
+    ----------
+    carrier_arg : str
+        Raw string value supplied on the command line.
+
+    Returns
+    -------
+    list of str
+        One or more carrier names to process.
+    """
+    stripped = carrier_arg.strip()
+    if stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, list) and all(isinstance(c, str) for c in parsed):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    return [carrier_arg]
+
+
+def _process_carrier(
+    carrier: str,
+    n: pypsa.Network,
+    bus_pattern: str | None,
+    output_dir: Path,
+    plot_mermaid: bool,
+) -> None:
+    """Build the topology for one carrier and write outputs.
+
+    Parameters
+    ----------
+    carrier : str
+        Carrier name to evaluate.
+    n : pypsa.Network
+        Loaded pypsa network.
+    bus_pattern : str or None
+        Optional bus name filter.
+    output_dir : Path
+        Directory where output files are written.
+    plot_mermaid : bool
+        When *True* attempt to render a PNG via mermaid.ink.
+    """
+    cn = CarrierNetwork(
+        carrier=carrier,
+        n=n,
+        bus_pattern=bus_pattern,
+        plot_subnetwork=False,
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Always write the Mermaid code as plain text
+    mermaid_code = cn.get_mermaid_string()
+    txt_path = output_dir / f"{carrier}.txt"
+    txt_path.write_text(mermaid_code, encoding="utf-8")
+    print(f"Mermaid code written to {txt_path}")
+
+    if not plot_mermaid:
+        return
+
+    # Attempt to render a PNG via mermaid.ink
+    try:
+        cn.create_mermaid_output(
+            graph=mermaid_code,
+            folderpath=str(output_dir),
+            return_mermaid_code=False,
+        )
+        print(f"PNG topology saved to {output_dir / (carrier + '.png')}")
+    except Exception:
+        print(
+            "PNG rendering skipped. This can happen when the diagram is too large "
+            "or there is no internet connection. The Mermaid code is available in "
+            f"{txt_path}."
+        )
+
+
+def _str_to_bool(value: str) -> bool:
+    """Convert a CLI string value to a boolean.
+
+    Parameters
+    ----------
+    value : str
+        String supplied on the command line.
+
+    Returns
+    -------
+    bool
+        *False* when *value* (case-insensitive) is ``"false"``, ``"0"``, or
+        ``"no"``; *True* otherwise.
+    """
+    return value.lower() not in ("false", "0", "no")
+
+
 def main() -> None:
     """Entry point for the *pypsa-topology* CLI tool."""
     parser = argparse.ArgumentParser(
         description=(
-            "Generate a Mermaid topology diagram for a carrier in a pypsa network. "
+            "Generate a Mermaid topology diagram for one or more carriers in a "
+            "pypsa network. "
             "The Mermaid code is always written to resources/<carrier>.txt. "
             "A PNG render is attempted via mermaid.ink and saved as "
-            "resources/<carrier>.png when the diagram is not too large."
+            "resources/<carrier>.png when the diagram is not too large. "
+            "Multiple carriers can be supplied as a JSON list, e.g. "
+            "'[\"gas\", \"coal\"]'."
         )
     )
     parser.add_argument(
@@ -140,7 +249,11 @@ def main() -> None:
     parser.add_argument(
         "carrier",
         type=str,
-        help="Carrier name to evaluate (must exist in the network).",
+        help=(
+            "Carrier name to evaluate (must exist in the network). "
+            "To evaluate multiple carriers pass a JSON list, "
+            "e.g. '[\"gas\", \"coal\"]'."
+        ),
     )
     parser.add_argument(
         "--bus-pattern",
@@ -154,40 +267,26 @@ def main() -> None:
             "Example: --bus-pattern AT0"
         ),
     )
+    parser.add_argument(
+        "--plot-mermaid",
+        type=_str_to_bool,
+        default=True,
+        dest="plot_mermaid",
+        metavar="{True,False}",
+        help=(
+            "Whether to attempt rendering the Mermaid diagram as a PNG via "
+            "mermaid.ink. Defaults to True. Pass False to skip PNG rendering "
+            "and only write the Mermaid code to a .txt file."
+        ),
+    )
     args = parser.parse_args()
 
     n = pypsa.Network(args.path_to_pypsa_file)
-
-    cn = CarrierNetwork(
-        carrier=args.carrier,
-        n=n,
-        bus_pattern=args.bus_pattern,
-        plot_subnetwork=False,
-    )
-
+    carriers = _parse_carriers(args.carrier)
     output_dir = Path("resources")
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Always write the Mermaid code as plain text
-    mermaid_code = cn.get_mermaid_string()
-    txt_path = output_dir / f"{args.carrier}.txt"
-    txt_path.write_text(mermaid_code, encoding="utf-8")
-    print(f"Mermaid code written to {txt_path}")
-
-    # Attempt to render a PNG via mermaid.ink
-    try:
-        cn.create_mermaid_output(
-            graph=mermaid_code,
-            folderpath=str(output_dir),
-            return_mermaid_code=False,
-        )
-        print(f"PNG topology saved to {output_dir / (args.carrier + '.png')}")
-    except Exception:
-        print(
-            "PNG rendering skipped. This can happen when the diagram is too large "
-            "or there is no internet connection. The Mermaid code is available in "
-            f"{txt_path}."
-        )
+    for carrier in carriers:
+        _process_carrier(carrier, n, args.bus_pattern, output_dir, args.plot_mermaid)
 
 
 if __name__ == "__main__":
