@@ -24,18 +24,22 @@ After installation two CLI commands are available:
 ### `pypsa-topology` – visualise carrier topology
 
 ```bash
-pypsa-topology <path_to_pypsa_file> <carrier> [--bus-pattern PATTERN]
+pypsa-topology <path_to_pypsa_file> <carrier> [--bus-pattern PATTERN] [--plot-mermaid {True,False}]
 ```
 
 | Argument              | Description                                                              |
 |-----------------------|--------------------------------------------------------------------------|
 | `path_to_pypsa_file`  | Path to the pypsa network file (`.nc` / `.h5`)                           |
-| `carrier`             | Carrier name to evaluate                                                  |
+| `carrier`             | Carrier name to evaluate, or a JSON list of carriers e.g. `'["gas", "coal"]'` |
 | `--bus-pattern PATTERN` | *(optional)* Restrict the output to buses whose name contains *PATTERN* |
+| `--plot-mermaid {True,False}` | *(optional, default `True`)* Set to `False` to skip PNG rendering and only write the Mermaid `.txt` file |
 
 The Mermaid code is always written to `resources/<carrier>.txt`.  
 A PNG render is attempted via [mermaid.ink](https://mermaid.ink) and saved as
-`resources/<carrier>.png` when the diagram is not too large.
+`resources/<carrier>.png` when the diagram is not too large (unless `--plot-mermaid False` is given).
+
+When **multiple carriers** are provided as a JSON list, each carrier is processed
+independently and produces its own output files.
 
 ```bash
 # Full network for carrier "gas"
@@ -43,6 +47,12 @@ pypsa-topology network.nc gas
 
 # Only buses matching "AT0" (e.g. regional sub-set)
 pypsa-topology network.nc gas --bus-pattern AT0
+
+# Multiple carriers at once – each is processed separately
+pypsa-topology network.nc '["gas", "coal"]'
+
+# Skip PNG rendering – only produce the .txt Mermaid file
+pypsa-topology network.nc gas --plot-mermaid False
 ```
 
 > **Note** – The `resources/` folder is excluded from git tracking and will be
