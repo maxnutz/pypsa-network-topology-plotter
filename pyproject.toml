@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "energy_balance_evaluation"
 version = "0.2.0"
-description = "Visualise the network topology of pypsa networks using Mermaid diagrams"
+description = "Visualise the network topology of pypsa networks around a carrier as interactive HTML"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
@@ -15,9 +15,7 @@ dependencies = [
     "pandas>=1.0.0",
     "numpy>=1.18.0",
     "pypsa>=0.18.0",
-    "Pillow>=9.0.0",
-    "requests>=2.0.0",
-    "matplotlib>=3.0.0",
+    "pyvis>=0.3.2",
 ]
 
 [project.scripts]

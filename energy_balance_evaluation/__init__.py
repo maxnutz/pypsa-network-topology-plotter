@@ -1,29 +1,33 @@
 """
 energy_balance_evaluation
 =========================
-Tools for visualising the network topology of pypsa networks.
+Interactive HTML topology plots of pypsa networks around a carrier.
 
 Available classes and functions
 --------------------------------
-- ``CarrierNetwork``   – evaluate and visualise a single-carrier sub-network.
-- ``CarriersNetwork``  – base class; builds all sub-network DataFrames for a
-                         carrier and generates Mermaid topology code.
-- ``eval_all_networks`` – convenience function to evaluate all carriers in a
-                          network at once.
-- ``get_components_of_carrier`` – return which component types are attached to
-                                  a given carrier name.
+- ``plot_carrier_topology`` – build the topology around a carrier and write it
+                              as interactive HTML.
+- ``CarrierTopology``       – select the sub-network around a carrier and build
+                              a plot-independent ``TopologyGraph``.
+- ``write_topology_html``   – render a ``TopologyGraph`` as HTML.
+- ``eval_all_networks``     – write an aggregated plot for every bus carrier.
+- ``get_components_of_carrier`` – count components per type using a carrier.
 """
 
+from energy_balance_evaluation.graph import CarrierTopology, TopologyGraph
+from energy_balance_evaluation.html_export import write_topology_html
 from energy_balance_evaluation.pypsa_network_eval import (
-    CarrierNetwork,
     eval_all_networks,
+    plot_carrier_topology,
 )
-from energy_balance_evaluation.utils import CarriersNetwork, get_components_of_carrier, InputError
+from energy_balance_evaluation.utils import InputError, get_components_of_carrier
 
 __all__ = [
-    "CarrierNetwork",
-    "CarriersNetwork",
+    "CarrierTopology",
     "InputError",
+    "TopologyGraph",
     "eval_all_networks",
     "get_components_of_carrier",
+    "plot_carrier_topology",
+    "write_topology_html",
 ]

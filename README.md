@@ -1,7 +1,8 @@
 # pypsa Network Topology Visualiser
 
-Visualise the network topology of [pypsa](https://pypsa.org/) networks as
-[Mermaid](https://mermaid.js.org/) diagrams.
+Interactive HTML plots of the topology of a [pypsa](https://pypsa.org/)
+network around a carrier, focused on sector-coupling links and the
+connections between regions.
 
 ---
 
@@ -17,51 +18,71 @@ pip install .
 
 ---
 
+
 ## CLI usage
 
 After installation two CLI commands are available:
 
-### `pypsa-topology` – visualise carrier topology
+### `pypsa-topology` – interactive topology around a carrier
 
 ```bash
-pypsa-topology <path_to_pypsa_file> <carrier> [--bus-pattern PATTERN] [--plot-mermaid {True,False}]
+pypsa-topology <path_to_pypsa_file> <carrier>... [--region REGION] [--depth N] [--output-dir DIR]
 ```
 
-| Argument              | Description                                                              |
-|-----------------------|--------------------------------------------------------------------------|
-| `path_to_pypsa_file`  | Path to the pypsa network file (`.nc` / `.h5`)                           |
-| `carrier`             | Carrier name to evaluate, or a JSON list of carriers e.g. `'["gas", "coal"]'` |
-| `--bus-pattern PATTERN` | *(optional)* Restrict the output to buses whose name contains *PATTERN* |
-| `--plot-mermaid {True,False}` | *(optional, default `True`)* Set to `False` to skip PNG rendering and only write the Mermaid `.txt` file |
+| Argument | Description |
+|----------|-------------|
+| `path_to_pypsa_file` | Path to the pypsa network file (`.nc` / `.h5`) |
+| `carrier` | One or more **bus** carriers (exact match), e.g. `H2`, `H2 gas`, or `'["H2", "gas"]'` |
+| `--region REGION` | *(optional)* Matched exactly against `bus.location` if any bus has that location, otherwise as a substring of the bus name |
+| `--depth N` | *(optional, default 1)* Number of bus hops expanded from the carrier bus(es) |
+| `--output-dir DIR` | *(optional, default `resources`)* Output folder |
 
-The Mermaid code is always written to `resources/<carrier>.txt`.  
-A PNG render is attempted via [mermaid.ink](https://mermaid.ink) and saved as
-`resources/<carrier>.png` when the diagram is not too large (unless `--plot-mermaid False` is given).
-
-When **multiple carriers** are provided as a JSON list, each carrier is processed
-independently and produces its own output files.
+Each carrier is written to `<output-dir>/<carrier>[_<region>].html`, a single
+self-contained file (vis-network is inlined, so it opens offline).
 
 ```bash
-# Full network for carrier "gas"
-pypsa-topology network.nc gas
+# All H2 buses merged into one H2 node, with every link type found at any H2 bus
+pypsa-topology network.nc H2
 
-# Only buses matching "AT0" (e.g. regional sub-set)
-pypsa-topology network.nc gas --bus-pattern AT0
+# Everything connected to the H2 bus of location AT11, every bus drawn individually
+pypsa-topology network.nc H2 --region AT11
 
-# Multiple carriers at once – each is processed separately
-pypsa-topology network.nc '["gas", "coal"]'
+# "AT" is no location -> substring match: the H2 buses of all Austrian regions
+pypsa-topology network.nc H2 --region AT
 
-# Skip PNG rendering – only produce the .txt Mermaid file
-pypsa-topology network.nc gas --plot-mermaid False
+# Two hops out from the H2 buses
+pypsa-topology network.nc H2 --depth 2
 ```
 
-> **Note** – The `resources/` folder is excluded from git tracking and will be
-> created automatically the first time the tool runs.
-- you can search for any carrier or bus_carrier in the network. 
-- to limit size of network-plots, the maximum number of buses is set to 12 after a reduction of 5 in first-line buses (directly connected to carrier-element).
-- Network-plots can therefore not be considered as complete for network components not directly connected to the carrier searched for.  
+If the carrier is not found, the tool suggests similar bus carriers.
 
----
+### What is drawn
+
+Starting from the buses of the carrier (within the region, if given), every
+link (all ports `bus0…busN`), line and transformer touching an included bus
+is followed for `--depth` hops. Generators, loads, stores and storage units
+on all included buses are added.
+
+- **Without region – aggregated view.** All buses of a carrier collapse into
+  one node (one `H2`, one `AC`, one `gas`, …). Links are grouped by link
+  carrier, so the `H2` node shows the union of all link types of all regions
+  (e.g. Electrolysis from one region and SMR from another). Links between
+  buses of the same carrier (e.g. `H2 pipeline`) are drawn as a self-loop.
+  Labels and tooltips show how many components are behind each node/edge.
+- **With region – detailed view.** Every bus and component is drawn
+  individually, including the buses in other regions at the far end of links.
+
+Drawing rules:
+
+- A link is drawn as one line per port (`bus0→bus1`, `bus0→bus2`, …). All
+  lines of one (multi)link share colour and label.
+- Arrows always point `bus0 → busN`; labels show the efficiency of the port
+  **with sign** (`η2=-0.2` means bus2 is an input).
+- Shapes: ● bus, ▲ generator, ▼ load, ■ store, ◆ storage unit. Colours come
+  from `n.carriers.color` where set.
+- Hovering a node or line highlights it together with all lines of the
+  (multi)links involved and the connected buses; tooltips list the members.
+  The layout settles once and can then be dragged and zoomed.
 
 ### `component-of-carrier` – find which components use a carrier
 
@@ -90,83 +111,26 @@ Carrier 'gas':
 
 ---
 
+
 ## Python API
-
-### `CarrierNetwork`
-
-Evaluate and optionally visualise the sub-network for a single carrier.
 
 ```python
 import pypsa
-from energy_balance_evaluation import CarrierNetwork
+from energy_balance_evaluation import CarrierTopology, plot_carrier_topology, write_topology_html
 
 n = pypsa.Network("my_network.nc")
 
-# Only build the sub-network DataFrames – no plot
-cn = CarrierNetwork(carrier="gas", n=n, plot_subnetwork=False)
+# One call: build and write resources/H2_AT11.html
+path = plot_carrier_topology(n, "H2", region="AT11", depth=1, output_dir="resources")
 
-# Get the Mermaid code as a string
-print(cn.get_mermaid_string())
-
-# Restrict to buses whose name contains "AT0"
-cn = CarrierNetwork(carrier="gas", n=n, bus_pattern="AT0", plot_subnetwork=False)
-
-# Build sub-network AND save a PNG (requires internet connection)
-cn = CarrierNetwork(
-    carrier="gas",
-    n=n,
-    png_outputfolder_path="resources",
-    plot_subnetwork=True,
-    return_mermaid_code=True,   # also save the .txt Mermaid code
-)
+# Or step by step
+topo = CarrierTopology(n, "H2")          # selection: start_buses, buses, ports, one_ports
+graph = topo.build_graph()              # plot-independent TopologyGraph (nodes, edges)
+write_topology_html(graph, "resources/H2.html")
 ```
 
-**Parameters**
-
-| Parameter              | Type               | Default | Description |
-|------------------------|--------------------|---------|-------------|
-| `carrier`              | `str`              | –       | Carrier to evaluate |
-| `n`                    | `pypsa.Network`    | –       | Network to evaluate |
-| `eval_one_node`        | `bool`             | `False` | Reduce to one geographical node |
-| `search_therm`         | `bool \| str`      | `None`  | Node identifier for `eval_one_node` |
-| `bus_pattern`          | `str \| None`      | `None`  | Optional substring to filter buses (e.g. `"AT0"`) |
-| `png_outputfolder_path`| `str`              | `None`  | Output folder for PNG (required when `plot_subnetwork=True`) |
-| `plot_subnetwork`      | `bool`             | `True`  | Generate and save a PNG topology plot |
-| `return_mermaid_code`  | `bool`             | `False` | Also save raw Mermaid code as `.txt` |
-
-**Attributes**
-
-| Attribute        | Type                   | Description                         |
-|------------------|------------------------|-------------------------------------|
-| `carrier`        | `str`                  | Carrier name                        |
-| `n`              | `pypsa.Network`        | The evaluated network               |
-| `generators`     | `pandas.DataFrame`     | Generators of the carrier           |
-| `buses`          | `pandas.DataFrame`     | Buses of the carrier                |
-| `links`          | `pandas.DataFrame`     | Links connected to the carrier buses|
-| `lines`          | `pandas.DataFrame`     | Lines connected to the carrier buses|
-| `stores`         | `pandas.DataFrame`     | Stores of the carrier               |
-| `storage_units`  | `pandas.DataFrame`     | Storage units of the carrier        |
-| `loads`          | `pandas.DataFrame`     | Loads of the carrier                |
-| `processes`      | `numpy.ndarray`        | Carrier labels of links and lines   |
-
----
-
-### `CarriersNetwork`
-
-Base class used by `CarrierNetwork`.  Can be used directly when the PNG
-rendering step is not needed.
-
-```python
-from energy_balance_evaluation import CarriersNetwork
-
-cn = CarriersNetwork(carrier="gas", n=n)
-mermaid_code = cn.get_mermaid_string()
-
-# Filter to a specific region
-cn_at0 = CarriersNetwork(carrier="gas", n=n, bus_pattern="AT0")
-```
-
----
+`eval_all_networks(n, output_dir="resources")` writes an aggregated plot for
+every bus carrier and returns the carriers that failed.
 
 ### `get_components_of_carrier`
 
@@ -190,47 +154,11 @@ components.  Component types with no match for the carrier are omitted.
 
 ---
 
-### `eval_all_networks`
-
-Evaluate all carriers in a network and save topology plots.
-
-```python
-from energy_balance_evaluation import eval_all_networks
-
-failed = eval_all_networks(
-    n,
-    png_outputfolder_path="resources",
-    eval_one_node=True,
-    return_mermaid_code=True,
-)
-print("Failed carriers:", failed)
-```
-
----
-
-## Network Topology diagram
-
-The topology diagram shows:
-
-- **Buses** (triple circles `((( )))`) – the carrier's main buses
-- **Generators** (rectangles `[ ]`) – connected to their bus with a thick edge (`===`)
-- **Loads** (rounded rectangles `( )`) – connected to their bus with a thick edge
-- **Storage units** – connected to their bus with a thick edge
-- **Links** – shown as labelled directed edges (`-- label -->`)
-  - Multi-link bus2,3,4 - connections are marked *indirect*
-- **Lines** – shown as labelled directed edges
-
-> [!NOTE]
-> When the Mermaid code is too large for the URI-based rendering API, the
-> raw code is saved to a `.txt` file for manual rendering.
-
-![methanol_small](https://github.com/user-attachments/assets/70a3239c-5d6c-4ffd-9c80-6e852fe54f53)
 
 ## Limitations
-- The package gives a complete overview of buses, generators, loads, storage_units, links and lines with respect to the given carrier. 
-- This implies, that buses and other elements, not directly connected to the "main" bus, holding the given carrier, are only shown in relation to the given carrier. 
 
-> In the given example, this means, that there are probably more links connected to the bus "co2 atmosphere" than shown in this plot, but they are not directly related to the main carrier "methanol" in here.
-
-- Depending on the network-topology, plots can get very large and hard to understand. This is expecially given for carriers modeled on a single bus, as EU oil, EU methanol, EU gas, etc. Therefore use the `--bus-pattern` to filter buses. 
-- The package is still under development, so expect ongoing changes.
+- Efficiencies are the static `efficiency…` attributes; time-varying
+  efficiencies are ignored.
+- In the aggregated view, hub carriers such as `AC` attach all their
+  generators and loads (aggregated by carrier). With `--depth 2` or more the
+  graph can grow quickly.
