@@ -30,8 +30,8 @@ The pipeline has two stages: selection and graph building in `graph.py`, then re
   - `CarrierTopology` finds the start buses. The carrier is an **exact** match on `bus.carrier`. If `--region` equals some `bus.location`, buses are matched by location; otherwise by substring of the bus name.
   - It then expands `depth` bus hops. A branch is always selected **as a whole** (all of its ports) once any of its buses is included.
   - It then attaches the one-port components on every included bus.
-  - `build_graph()` produces a `TopologyGraph` of `Node` and `Edge` objects. Without a region it is **aggregated**: node id `bus|<bus carrier>`, and edges grouped by (component, carrier, port, source, target). With a region it is **detailed**: node id `bus|<bus name>`, one edge per port.
-  - `Edge.group` ties together all lines of one multilink: `Link|<name>` in the detailed view, `Link|<carrier>` in the aggregated view.
+  - `build_graph()` produces a `TopologyGraph` of `Node` and `Edge` objects. Without a region it is **aggregated**: node id `bus|<bus carrier>`, and edges grouped by (component, carrier, port, source, target). With a region it is **detailed**: node id `bus|<bus name>`, one edge per port, except that branches with an identical signature (`_branch_signatures`: component, carrier, `bus0` and all `(port, bus, efficiency)`, e.g. build-year vintages) are merged into one.
+  - `Edge.group` ties together all lines of one multilink: `Link|<first member name>` in the detailed view, `Link|<carrier>` in the aggregated view.
 - `html_export.py`:
   - Converts the graph to pyvis and writes the HTML with vis-network inlined (`cdn_resources="in_line"`).
   - Each edge carries a custom `linkgroup` attribute taken from `Edge.group`.

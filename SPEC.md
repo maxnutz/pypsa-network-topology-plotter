@@ -32,6 +32,7 @@ pypsa-topology <network.nc> <carrier>... [--region R] [--depth N] [--output-dir 
 
 - Every bus is its own node, including the buses in other regions at the far end of links (cross-region structure stays visible).
 - Every element connected to the region's carrier bus(es) is drawn individually.
+- Exception: branches that are identical in component, carrier, `bus0` and every `(port, bus, efficiency)` (e.g. build-year vintages `…-2010`, `…-2015`) are merged into one (multi)link; the label shows `(n=X)`, the tooltip lists the members and the summed capacity. Branches that differ in any efficiency stay separate.
 
 ## Drawing rules
 

@@ -179,7 +179,7 @@ def _edge_label(edge: Edge, aggregated: bool) -> str:
     if edge.kind == "Attachment":
         return ""
     name = edge.carrier
-    if aggregated:
+    if aggregated or len(edge.members) > 1:
         name += f" (n={len(edge.members)})"
     eff = efficiency_text(edge)
     return f"{name}\n{eff}" if eff else name

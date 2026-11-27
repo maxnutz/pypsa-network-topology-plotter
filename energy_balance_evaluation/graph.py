@@ -241,6 +241,44 @@ def branch_ports(n: pypsa.Network) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def _branch_signatures(ports: pd.DataFrame) -> pd.Series:
+    """Topology signature of the branch behind each port row.
+
+    Two branches share a signature when they have the same component,
+    carrier and ``bus0`` and identical ``(port, bus, efficiency)`` for every
+    port, e.g. build-year vintages of the same link. Efficiencies are compared
+    after rounding to 6 decimals.
+
+    Parameters
+    ----------
+    ports : pandas.DataFrame
+        Port table as returned by :func:`branch_ports`.
+
+    Returns
+    -------
+    pandas.Series
+        One signature string per row of *ports* (aligned to its index).
+    """
+    eff = ports["efficiency"].round(6).astype(str)
+    part = ports["port"].astype(str) + ":" + ports["bus"] + ":" + eff
+    per_branch = (
+        part.groupby([ports["component"], ports["name"]], sort=False)
+        .agg(lambda s: "|".join(sorted(s)))
+        .rename("ports")
+    )
+    keys = pd.MultiIndex.from_frame(ports[["component", "name"]])
+    return pd.Series(
+        ports["component"]
+        + "|"
+        + ports["carrier"]
+        + "|"
+        + ports["bus0"]
+        + "|"
+        + per_branch.reindex(keys).to_numpy(),
+        index=ports.index,
+    )
+
+
 class CarrierTopology:
     """Select the sub-network around a carrier.
 
@@ -436,20 +474,24 @@ class CarrierTopology:
                     )
                 )
         else:
-            for row in ports.itertuples(index=False):
+            ports = ports.assign(signature=_branch_signatures(ports))
+            keys = ["component", "carrier", "signature", "port", "source", "target"]
+            for (component, carrier, _, port, source, target), grp in ports.groupby(
+                keys, sort=False
+            ):
+                names = grp["name"].tolist()
+                efficiency = grp["efficiency"].iloc[0]
                 edges.append(
                     Edge(
-                        source=row.source,
-                        target=row.target,
-                        kind=row.component,
-                        carrier=row.carrier,
-                        group=f"{row.component}|{row.name}",
-                        port=int(row.port),
-                        efficiencies=(
-                            [] if pd.isna(row.efficiency) else [row.efficiency]
-                        ),
-                        members=[row.name],
-                        capacity=row.capacity,
+                        source=source,
+                        target=target,
+                        kind=component,
+                        carrier=carrier,
+                        group=f"{component}|{names[0]}",
+                        port=int(port),
+                        efficiencies=[] if pd.isna(efficiency) else [efficiency],
+                        members=names,
+                        capacity=grp["capacity"].sum(min_count=1),
                     )
                 )
 

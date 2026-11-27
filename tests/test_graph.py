@@ -139,6 +139,24 @@ class TestRegionView:
         assert len(smr) == 2
         assert {e.group for e in smr} == {"Link|R2 SMR"}
 
+    def test_identical_links_merged(self, two_region_network: pypsa.Network) -> None:
+        n = two_region_network
+        common = dict(bus0="R2 gas", bus1="R2 H2", bus2="R2 co2 stored")
+        common |= dict(carrier="SMR", efficiency2=-0.2, p_nom=1)
+        n.add("Link", "R2 SMR-2020", efficiency=0.76, **common)
+        n.add("Link", "R2 SMR-2025", efficiency=0.8, **common)
+        g = CarrierTopology(n, "H2", region="R2").build_graph()
+        smr = [e for e in _link_edges(g) if e.carrier == "SMR"]
+        # two distinct signatures x two ports each
+        assert len(smr) == 4
+        merged = [e for e in smr if len(e.members) == 2]
+        assert len(merged) == 2
+        assert {e.group for e in merged} == {"Link|R2 SMR"}
+        assert all(e.members == ["R2 SMR", "R2 SMR-2020"] for e in merged)
+        assert all(e.capacity == 4 for e in merged)
+        single = [e for e in smr if len(e.members) == 1]
+        assert {e.group for e in single} == {"Link|R2 SMR-2025"}
+
     def test_depth_0_only_start_bus(self, two_region_network: pypsa.Network) -> None:
         g = CarrierTopology(
             two_region_network, "H2", region="R2", depth=0
