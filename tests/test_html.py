@@ -86,3 +86,17 @@ def test_plot_carrier_topology_writes_file(
     assert (
         "cdnjs.cloudflare.com/ajax/libs/vis-network" not in content
     ), "vis-network is inlined"
+
+
+def test_tooltips_are_plain_text(two_region_network: pypsa.Network) -> None:
+    """Network-controlled names cannot inject markup into the page."""
+    evil = '</script><img src=x onerror="alert(1)">'
+    n = two_region_network
+    n.add("Store", evil, bus="R2 H2", carrier="H2", e_nom=1)
+    html = topology_html(CarrierTopology(n, "H2").build_graph())
+    # the data JSON escapes '<', '>' so the name cannot close the <script>
+    assert evil not in html and "<img" not in html
+    nodes = _dataset(html, "nodes")
+    assert any(evil in node["title"] for node in nodes)
+    # vis-network shows string titles via innerText, never as HTML
+    assert "this.frame.innerText=t" in html

@@ -94,6 +94,12 @@ class TestAggregatedView:
         g = CarrierTopology(two_region_network, "H2", depth=2).build_graph()
         assert [e for e in g.edges if e.kind == "Line"]
 
+    def test_detailed_view_with_line(self, two_region_network: pypsa.Network) -> None:
+        # lines have no efficiency; signatures must not fail on NaN
+        g = CarrierTopology(two_region_network, "AC", region="R1").build_graph()
+        (line,) = [e for e in g.edges if e.kind == "Line"]
+        assert line.members == ["AC line R1-R2"]
+
     def test_one_ports_aggregated(self, two_region_network: pypsa.Network) -> None:
         g = CarrierTopology(two_region_network, "H2").build_graph()
         gens = [v for v in g.nodes.values() if v.kind == "Generator"]
@@ -170,3 +176,53 @@ def test_carrier_color() -> None:
     fallback = carrier_color("unknown", {"unknown": ""})
     assert fallback.startswith("#")
     assert fallback == carrier_color("unknown", {})
+
+
+def test_storage_unit_attached_and_aggregated(
+    two_region_network: pypsa.Network,
+) -> None:
+    n = two_region_network
+    for r in ["R1", "R2"]:
+        n.add("StorageUnit", f"{r} H2 cavern", bus=f"{r} H2", carrier="H2", p_nom=7)
+    g = CarrierTopology(n, "H2").build_graph()
+    (su,) = [v for v in g.nodes.values() if v.kind == "StorageUnit"]
+    assert su.members == ["R1 H2 cavern", "R2 H2 cavern"]
+    assert su.capacity == pytest.approx(14)
+    assert any(e.kind == "Attachment" and e.target == su.id for e in g.edges)
+    # detailed: one node per storage unit (R2 H2 is reached via the pipeline)
+    detailed = CarrierTopology(n, "H2", region="R1").build_graph()
+    sus = [v for v in detailed.nodes.values() if v.kind == "StorageUnit"]
+    assert sorted(v.members[0] for v in sus) == ["R1 H2 cavern", "R2 H2 cavern"]
+    assert all(len(v.members) == 1 for v in sus)
+
+
+class TestTransformer:
+    """Transformers are branches like lines: bus0 -> bus1, selected as a whole."""
+
+    @pytest.fixture
+    def network(self, two_region_network: pypsa.Network) -> pypsa.Network:
+        n = two_region_network
+        n.add("Bus", "R1 HV", carrier="HV", location="R1")
+        n.add("Transformer", "R1 trafo", bus0="R1 HV", bus1="R1 AC", s_nom=40, x=0.1)
+        return n
+
+    def test_branch_ports(self, network: pypsa.Network) -> None:
+        ports = branch_ports(network)
+        (row,) = ports[ports["component"] == "Transformer"].itertuples()
+        assert (row.bus0, row.bus, row.port) == ("R1 HV", "R1 AC", 1)
+
+    def test_selected_from_either_bus(self, network: pypsa.Network) -> None:
+        for carrier in ["HV", "AC"]:
+            g = CarrierTopology(network, carrier, region="R1").build_graph()
+            (tr,) = [e for e in g.edges if e.kind == "Transformer"]
+            assert (tr.source, tr.target) == ("bus|R1 HV", "bus|R1 AC")
+            assert tr.members == ["R1 trafo"]
+
+    def test_depth_expansion(self, network: pypsa.Network) -> None:
+        # R1 H2 -> (Electrolysis) R1 AC -> (transformer) R1 HV
+        def has_trafo(depth: int) -> bool:
+            g = CarrierTopology(network, "H2", region="R1", depth=depth).build_graph()
+            return any(e.kind == "Transformer" for e in g.edges)
+
+        assert not has_trafo(1)
+        assert has_trafo(2)

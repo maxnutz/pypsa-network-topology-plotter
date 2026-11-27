@@ -117,3 +117,15 @@ def test_unknown_carrier_exits_nonzero(nc_file: Path, tmp_path: Path) -> None:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_eval_all_networks_skips_sentinel_carriers(tmp_path: Path) -> None:
+    from energy_balance_evaluation import eval_all_networks
+
+    n = _make_two_carrier_network()
+    n.add("Bus", "bus_empty", carrier="")
+    n.add("Bus", "bus_none", carrier="none")
+    n.add("Bus", "bus_space", carrier=" ")
+    failed = eval_all_networks(n, output_dir=tmp_path)
+    assert failed == []
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["coal.html", "gas.html"]

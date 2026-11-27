@@ -259,7 +259,8 @@ def _branch_signatures(ports: pd.DataFrame) -> pd.Series:
     pandas.Series
         One signature string per row of *ports* (aligned to its index).
     """
-    eff = ports["efficiency"].round(6).astype(str)
+    # lines/transformers have no efficiency; pandas>=3 keeps NaN through astype(str)
+    eff = ports["efficiency"].round(6).astype(str).fillna("nan")
     part = ports["port"].astype(str) + ":" + ports["bus"] + ":" + eff
     per_branch = (
         part.groupby([ports["component"], ports["name"]], sort=False)

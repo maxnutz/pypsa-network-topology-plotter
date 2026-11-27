@@ -130,7 +130,8 @@ write_topology_html(graph, "resources/H2.html")
 ```
 
 `eval_all_networks(n, output_dir="resources")` writes an aggregated plot for
-every bus carrier and returns the carriers that failed.
+every bus carrier (skipping empty and `"none"` carriers) and returns the
+carriers that failed.
 
 ### `get_components_of_carrier`
 

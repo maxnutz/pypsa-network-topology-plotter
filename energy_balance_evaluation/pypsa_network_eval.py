@@ -86,9 +86,17 @@ def eval_all_networks(
     -------
     list of str
         Carriers that could not be processed.
+
+    Notes
+    -----
+    Buses without a meaningful carrier (empty, whitespace or ``"none"``) are
+    skipped.
     """
+    carriers = n.buses["carrier"].dropna().astype(str)
+    stripped = carriers.str.strip()
+    carriers = carriers[(stripped != "") & (stripped.str.lower() != "none")]
     failed = []
-    for carrier in n.buses["carrier"].dropna().astype(str).unique():
+    for carrier in carriers.unique():
         try:
             plot_carrier_topology(n, carrier, depth=depth, output_dir=output_dir)
         except Exception as exc:  # keep going for the remaining carriers
