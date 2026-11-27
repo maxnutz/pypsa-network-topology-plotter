@@ -1,12 +1,10 @@
 """
-Tests for CLI additions in energy_balance_evaluation.pypsa_network_eval:
-  - multiple carriers via JSON list
-  - --plot-mermaid flag
+Tests for the CLI in energy_balance_evaluation.pypsa_network_eval.
 """
 
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pypsa
 import pytest
@@ -34,6 +32,7 @@ class TestParseCarriers(unittest.TestCase):
 
     def _fn(self, *args: str):
         from energy_balance_evaluation.pypsa_network_eval import _parse_carriers
+
         return _parse_carriers(list(args))
 
     def test_single_carrier_returns_list_of_one(self):
@@ -81,138 +80,52 @@ class TestParseCarriers(unittest.TestCase):
         self.assertEqual(result, ["gas", "coal", "electricity"])
 
 
-class TestProcessCarrier(unittest.TestCase):
-    """Tests for _process_carrier – verifies .txt is always written."""
+def _run_main(argv: list[str]) -> None:
+    from energy_balance_evaluation.pypsa_network_eval import main
 
-    def setUp(self):
-        self.n = _make_two_carrier_network()
-
-    def test_txt_file_written_plot_mermaid_true(self):
-        import tempfile
-
-        from energy_balance_evaluation.pypsa_network_eval import _process_carrier
-
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            # patch create_mermaid_output to avoid network call
-            with patch(
-                "energy_balance_evaluation.pypsa_network_eval.CarrierNetwork.create_mermaid_output"
-            ):
-                _process_carrier("gas", self.n, None, output_dir, plot_mermaid=True)
-            txt = output_dir / "gas.txt"
-            self.assertTrue(txt.exists(), "Mermaid .txt file should always be written")
-            self.assertIn("flowchart", txt.read_text(encoding="utf-8"))
-
-    def test_txt_file_written_plot_mermaid_false(self):
-        import tempfile
-
-        from energy_balance_evaluation.pypsa_network_eval import _process_carrier
-
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            _process_carrier("gas", self.n, None, output_dir, plot_mermaid=False)
-            txt = output_dir / "gas.txt"
-            self.assertTrue(txt.exists(), "Mermaid .txt file should always be written")
-
-    def test_png_not_attempted_when_plot_mermaid_false(self):
-        import tempfile
-
-        from energy_balance_evaluation.pypsa_network_eval import _process_carrier
-
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            with patch(
-                "energy_balance_evaluation.pypsa_network_eval.CarrierNetwork.create_mermaid_output"
-            ) as mock_plot:
-                _process_carrier("gas", self.n, None, output_dir, plot_mermaid=False)
-            mock_plot.assert_not_called()
-
-    def test_png_attempted_when_plot_mermaid_true(self):
-        import tempfile
-
-        from energy_balance_evaluation.pypsa_network_eval import _process_carrier
-
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            with patch(
-                "energy_balance_evaluation.pypsa_network_eval.CarrierNetwork.create_mermaid_output"
-            ) as mock_plot:
-                _process_carrier("gas", self.n, None, output_dir, plot_mermaid=True)
-            mock_plot.assert_called_once()
+    with patch("sys.argv", ["pypsa-topology", *argv]):
+        main()
 
 
-class TestMainMultipleCarriers(unittest.TestCase):
-    """Integration-level tests for main() with multiple carriers."""
+@pytest.fixture
+def nc_file(tmp_path: Path) -> Path:
+    path = tmp_path / "test_network.nc"
+    _make_two_carrier_network().export_to_netcdf(str(path))
+    return path
 
-    def _make_nc_file(self, tmp_dir: Path) -> Path:
-        n = _make_two_carrier_network()
-        nc_path = tmp_dir / "test_network.nc"
-        n.export_to_netcdf(str(nc_path))
-        return nc_path
 
-    def test_multiple_carriers_each_get_txt_file(self):
-        import tempfile
+def test_multiple_carriers_each_get_html(nc_file: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    _run_main([str(nc_file), '["gas", "coal"]', "--output-dir", str(out)])
+    assert (out / "gas.html").exists()
+    assert (out / "coal.html").exists()
 
-        from energy_balance_evaluation.pypsa_network_eval import main
 
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            nc_file = self._make_nc_file(tmp_path)
-            resources_dir = tmp_path / "resources"
+def test_region_in_filename(nc_file: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    _run_main([str(nc_file), "gas", "--region", "bus_gas", "--output-dir", str(out)])
+    assert (out / "gas_bus_gas.html").exists()
 
-            original_path = Path
 
-            def patched_path(arg="", *a, **kw):
-                if arg == "resources":
-                    return resources_dir
-                return original_path(arg, *a, **kw)
-
-            with patch(
-                "energy_balance_evaluation.pypsa_network_eval.Path",
-                side_effect=patched_path,
-            ):
-                with patch(
-                    "sys.argv",
-                    ["pypsa-topology", str(nc_file), '["gas", "coal"]', "--plot-mermaid", "False"],
-                ):
-                    main()
-
-            self.assertTrue((resources_dir / "gas.txt").exists())
-            self.assertTrue((resources_dir / "coal.txt").exists())
-
-    def test_plot_mermaid_false_skips_png(self):
-        """When --plot-mermaid False, create_mermaid_output must not be called."""
-        import tempfile
-
-        from energy_balance_evaluation.pypsa_network_eval import main
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            nc_file = self._make_nc_file(tmp_path)
-            resources_dir = tmp_path / "resources"
-
-            original_path = Path
-
-            def patched_path(arg="", *a, **kw):
-                if arg == "resources":
-                    return resources_dir
-                return original_path(arg, *a, **kw)
-
-            with patch(
-                "energy_balance_evaluation.pypsa_network_eval.Path",
-                side_effect=patched_path,
-            ):
-                with patch(
-                    "energy_balance_evaluation.pypsa_network_eval.CarrierNetwork.create_mermaid_output"
-                ) as mock_plot:
-                    with patch(
-                        "sys.argv",
-                        ["pypsa-topology", str(nc_file), "gas", "--plot-mermaid", "False"],
-                    ):
-                        main()
-
-            mock_plot.assert_not_called()
+def test_unknown_carrier_exits_nonzero(nc_file: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as exc:
+        _run_main([str(nc_file), "gas", "nonexistent", "--output-dir", str(out)])
+    assert exc.value.code == 1
+    assert (out / "gas.html").exists(), "valid carriers are still processed"
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_eval_all_networks_skips_sentinel_carriers(tmp_path: Path) -> None:
+    from energy_balance_evaluation import eval_all_networks
+
+    n = _make_two_carrier_network()
+    n.add("Bus", "bus_empty", carrier="")
+    n.add("Bus", "bus_none", carrier="none")
+    n.add("Bus", "bus_space", carrier=" ")
+    failed = eval_all_networks(n, output_dir=tmp_path)
+    assert failed == []
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["coal.html", "gas.html"]

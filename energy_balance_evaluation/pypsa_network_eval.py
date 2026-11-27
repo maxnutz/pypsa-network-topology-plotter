@@ -1,131 +1,108 @@
 #!/usr/bin/env python3
 """
-pypsa_network_eval – CLI and API for pypsa network topology visualisation.
+pypsa_network_eval – CLI and API for interactive pypsa topology plots.
 
 Usage (command line)
 --------------------
-    pypsa-topology <path_to_pypsa_file> <carrier> [--bus-pattern PATTERN]
-                   [--plot-mermaid {True,False}]
+    pypsa-topology <path_to_pypsa_file> <carrier>... [--region REGION]
+                   [--depth N] [--output-dir DIR]
 
-    Multiple carriers can be supplied as a JSON list:
-        pypsa-topology network.nc '["gas", "coal"]'
+Without ``--region`` all buses of the carrier are merged into one node (and
+all other buses into one node per carrier). With ``--region`` every bus and
+component connected to the region's carrier bus(es) is drawn individually.
 
-    or
-
-    python -m energy_balance_evaluation.pypsa_network_eval <path_to_pypsa_file> <carrier>
-
-The Mermaid code is always written to resources/<carrier>.txt relative to the
-current working directory.  A PNG render is attempted and saved as
-resources/<carrier>.png when the diagram is not too large (unless
---plot-mermaid False is given).
+The output is written to ``<output-dir>/<carrier>[_<region>].html``
+(default output dir: ``resources``).
 """
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pypsa
 
-from .utils import CarriersNetwork, get_components_of_carrier
+from .graph import CarrierTopology
+from .html_export import output_filename, write_topology_html
+from .utils import InputError, get_components_of_carrier
 
 
-class CarrierNetwork(CarriersNetwork):
-    """
-    Evaluate and optionally visualise the sub-network for a single carrier.
+def plot_carrier_topology(
+    n: pypsa.Network,
+    carrier: str,
+    region: str | None = None,
+    depth: int = 1,
+    output_dir: str | Path = "resources",
+) -> Path:
+    """Build the topology around *carrier* and write it as interactive HTML.
 
     Parameters
     ----------
-    carrier : str
-        Name of the carrier to evaluate.
     n : pypsa.Network
-        Network to evaluate.
-    eval_one_node : bool, optional
-        Reduce the network to one geographical node. Defaults to False.
-    search_therm : bool or str, optional
-        Node identifier used when *eval_one_node* is True. Defaults to None.
-    bus_pattern : str or None, optional
-        When provided, only buses whose index contains *bus_pattern* (and all
-        components connected to those buses) are included in the topology.
-        Defaults to None (no filtering).
-    png_outputfolder_path : str, optional
-        Folder where the PNG topology plot is saved.  Required when
-        *plot_subnetwork* is True.
-    plot_subnetwork : bool, optional
-        When True, generate and save a PNG plot of the sub-network topology.
-        Defaults to True.
-    return_mermaid_code : bool, optional
-        When True, also save the raw Mermaid code alongside the PNG.
-        Defaults to False.
+        The network to evaluate.
+    carrier : str
+        Bus carrier to start from (exact match).
+    region : str or None, optional
+        Optional region (``bus.location`` or substring of the bus name).
+        Without a region, the graph is aggregated by carrier.
+    depth : int, optional
+        Number of bus hops expanded from the carrier bus(es). Defaults to 1.
+    output_dir : str or pathlib.Path, optional
+        Output folder. Defaults to ``"resources"``.
+
+    Returns
+    -------
+    pathlib.Path
+        Path of the written HTML file.
+
+    Raises
+    ------
+    InputError
+        When the carrier or region is not found.
     """
-
-    def __init__(
-        self,
-        carrier: str,
-        n: pypsa.Network,
-        eval_one_node: bool = False,
-        search_therm: bool | str = None,
-        bus_pattern: str | None = None,
-        png_outputfolder_path: str = None,
-        plot_subnetwork: bool = True,
-        return_mermaid_code: bool = False,
-    ):
-        super().__init__(carrier, n, eval_one_node, search_therm, bus_pattern)
-        if plot_subnetwork:
-            if png_outputfolder_path is None:
-                raise ValueError(
-                    "When plotting subnetworks you must provide the path to an output "
-                    "folder via the 'png_outputfolder_path' argument."
-                )
-            self.plot_subnetwork(png_outputfolder_path, return_mermaid_code)
-
-    def __repr__(self) -> str:
-        vars_hint = (
-            " -- access attributes: generators, buses, links, lines, stores, "
-            "storage_units, loads, processes."
-        )
-        return f"CarrierNetwork(carrier={self.carrier})" + vars_hint
+    graph = CarrierTopology(n, carrier, region=region, depth=depth).build_graph()
+    return write_topology_html(
+        graph, Path(output_dir) / output_filename(carrier, region)
+    )
 
 
 def eval_all_networks(
     n: pypsa.Network,
-    png_outputfolder_path: str,
-    eval_one_node: bool = True,
-    return_mermaid_code: bool = False,
-) -> list:
-    """
-    Evaluate all carriers in *n* and save topology plots.
+    output_dir: str | Path = "resources",
+    depth: int = 1,
+) -> list[str]:
+    """Write an aggregated topology HTML for every bus carrier of *n*.
 
     Parameters
     ----------
     n : pypsa.Network
-        Network to evaluate.
-    png_outputfolder_path : str
-        Folder where the PNG topology plots are saved.
-    eval_one_node : bool, optional
-        Reduce each sub-network to one node. Defaults to True.
-    return_mermaid_code : bool, optional
-        Also save the Mermaid code for each carrier. Defaults to False.
+        The network to evaluate.
+    output_dir : str or pathlib.Path, optional
+        Output folder. Defaults to ``"resources"``.
+    depth : int, optional
+        Number of bus hops. Defaults to 1.
 
     Returns
     -------
     list of str
-        Carriers for which the evaluation failed.
+        Carriers that could not be processed.
+
+    Notes
+    -----
+    Buses without a meaningful carrier (empty, whitespace or ``"none"``) are
+    skipped.
     """
-    error_carriers = []
-    for carrier in n.carriers.index.values:
-        if carrier in ("none", "", " "):
-            continue
+    carriers = n.buses["carrier"].dropna().astype(str)
+    stripped = carriers.str.strip()
+    carriers = carriers[(stripped != "") & (stripped.str.lower() != "none")]
+    failed = []
+    for carrier in carriers.unique():
         try:
-            CarrierNetwork(
-                carrier,
-                n,
-                eval_one_node=eval_one_node,
-                png_outputfolder_path=png_outputfolder_path,
-                return_mermaid_code=return_mermaid_code,
-            )
-        except Exception:
-            error_carriers.append(carrier)
-    return error_carriers
+            plot_carrier_topology(n, carrier, depth=depth, output_dir=output_dir)
+        except Exception as exc:  # keep going for the remaining carriers
+            print(f"Carrier '{carrier}' failed: {exc}")
+            failed.append(carrier)
+    return failed
 
 
 def _parse_carriers(carrier_args: list[str]) -> list[str]:
@@ -170,7 +147,11 @@ def _parse_carriers(carrier_args: list[str]) -> list[str]:
     # Comma-separated quoted strings without brackets: '"gas", "coal"'
     try:
         parsed = json.loads(f"[{arg}]")
-        if isinstance(parsed, list) and len(parsed) > 1 and all(isinstance(c, str) for c in parsed):
+        if (
+            isinstance(parsed, list)
+            and len(parsed) > 1
+            and all(isinstance(c, str) for c in parsed)
+        ):
             return parsed
     except json.JSONDecodeError:
         pass
@@ -179,90 +160,12 @@ def _parse_carriers(carrier_args: list[str]) -> list[str]:
     return list(carrier_args)
 
 
-def _process_carrier(
-    carrier: str,
-    n: pypsa.Network,
-    bus_pattern: str | None,
-    output_dir: Path,
-    plot_mermaid: bool,
-) -> None:
-    """Build the topology for one carrier and write outputs.
-
-    Parameters
-    ----------
-    carrier : str
-        Carrier name to evaluate.
-    n : pypsa.Network
-        Loaded pypsa network.
-    bus_pattern : str or None
-        Optional bus name filter.
-    output_dir : Path
-        Directory where output files are written.
-    plot_mermaid : bool
-        When *True* attempt to render a PNG via mermaid.ink.
-    """
-    cn = CarrierNetwork(
-        carrier=carrier,
-        n=n,
-        bus_pattern=bus_pattern,
-        plot_subnetwork=False,
-    )
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Always write the Mermaid code as plain text
-    mermaid_code = cn.get_mermaid_string()
-    txt_path = output_dir / f"{carrier}.txt"
-    txt_path.write_text(mermaid_code, encoding="utf-8")
-    print(f"Mermaid code written to {txt_path}")
-
-    if not plot_mermaid:
-        return
-
-    # Attempt to render a PNG via mermaid.ink
-    try:
-        cn.create_mermaid_output(
-            graph=mermaid_code,
-            folderpath=str(output_dir),
-            return_mermaid_code=False,
-        )
-        print(f"PNG topology saved to {output_dir / (carrier + '.png')}")
-    except Exception:
-        print(
-            "PNG rendering skipped. This can happen when the diagram is too large "
-            "or there is no internet connection. The Mermaid code is available in "
-            f"{txt_path}."
-        )
-
-
-def _str_to_bool(value: str) -> bool:
-    """Convert a CLI string value to a boolean.
-
-    Parameters
-    ----------
-    value : str
-        String supplied on the command line.
-
-    Returns
-    -------
-    bool
-        *False* when *value* (case-insensitive) is ``"false"``, ``"0"``, or
-        ``"no"``; *True* otherwise.
-    """
-    return value.lower() not in ("false", "0", "no")
-
-
 def main() -> None:
     """Entry point for the *pypsa-topology* CLI tool."""
     parser = argparse.ArgumentParser(
         description=(
-            "Generate a Mermaid topology diagram for one or more carriers in a "
-            "pypsa network. "
-            "The Mermaid code is always written to resources/<carrier>.txt. "
-            "A PNG render is attempted via mermaid.ink and saved as "
-            "resources/<carrier>.png when the diagram is not too large. "
-            "Multiple carriers can be supplied as a JSON list, e.g. "
-            "'[\"gas\", \"coal\"]'."
+            "Write an interactive HTML topology plot around one or more "
+            "carriers of a pypsa network to <output-dir>/<carrier>[_<region>].html."
         )
     )
     parser.add_argument(
@@ -275,48 +178,54 @@ def main() -> None:
         type=str,
         nargs="+",
         help=(
-            "One or more carrier names to evaluate (must exist in the network). "
-            "Can be supplied as: single name (gas), space-separated names "
-            '(gas coal), or JSON list (\'["gas", "coal"]\'). '
-            'When supplying names with spaces, quote each name (\\"agriculture electricity\\").'
+            "One or more bus carriers (exact match). Can be supplied as: single "
+            "name (H2), space-separated names (H2 gas), or JSON list "
+            '(\'["H2", "gas"]\'). Quote names containing spaces.'
         ),
     )
     parser.add_argument(
-        "--bus-pattern",
+        "--region",
         type=str,
         default=None,
-        dest="bus_pattern",
         help=(
-            "Optional substring pattern to filter buses. When provided, only "
-            "buses whose name contains this pattern (and their related "
-            "generators, loads, links, stores, storage units) are included. "
-            "Example: --bus-pattern AT0"
+            "Optional region. Matched exactly against bus.location if any bus "
+            "has that location, otherwise as substring of the bus name. Without "
+            "a region all buses of a carrier are merged into one node."
         ),
     )
     parser.add_argument(
-        "--plot-mermaid",
-        type=_str_to_bool,
-        default=True,
-        dest="plot_mermaid",
-        metavar="{True,False}",
-        help=(
-            "Whether to attempt rendering the Mermaid diagram as a PNG via "
-            "mermaid.ink. Defaults to True. Pass False to skip PNG rendering "
-            "and only write the Mermaid code to a .txt file."
-        ),
+        "--depth",
+        type=int,
+        default=1,
+        help="Number of bus hops expanded from the carrier bus(es). Default: 1.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="resources",
+        dest="output_dir",
+        help="Output folder for the HTML files. Default: resources.",
     )
     args = parser.parse_args()
 
     n = pypsa.Network(args.path_to_pypsa_file)
-    carriers = _parse_carriers(args.carrier)
-    output_dir = Path("resources")
-
-    for carrier in carriers:
-        _process_carrier(carrier, n, args.bus_pattern, output_dir, args.plot_mermaid)
-
-
-if __name__ == "__main__":
-    main()
+    failed = False
+    for carrier in _parse_carriers(args.carrier):
+        try:
+            path = plot_carrier_topology(
+                n,
+                carrier,
+                region=args.region,
+                depth=args.depth,
+                output_dir=args.output_dir,
+            )
+        except InputError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            failed = True
+            continue
+        print(f"Topology written to {path}")
+    if failed:
+        sys.exit(1)
 
 
 def main_component_of_carrier() -> None:
@@ -360,3 +269,7 @@ def main_component_of_carrier() -> None:
     for component_type, count in result.items():
         label = plural.get(component_type, component_type + "s")
         print(f"  {label}: {count}")
+
+
+if __name__ == "__main__":
+    main()
