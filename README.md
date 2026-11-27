@@ -4,6 +4,17 @@ Interactive HTML plots of the topology of a [pypsa](https://pypsa.org/)
 network around a carrier, focused on sector-coupling links and the
 connections between regions.
 
+![Aggregated topology around the oil carrier](pngs/network-overview.png)
+
+*Aggregated view around `oil`: every bus carrier is one node, links are
+grouped by link carrier, and ▲/▼/■ mark generators, loads and stores.*
+
+![Hovering a Fischer-Tropsch link](pngs/mouseover_high-resolution.png)
+
+*Hovering a line highlights all ports of the multilink (here
+Fischer-Tropsch, connecting H2, oil, co2 stored and urban central heat) and shows a
+tooltip with port, signed efficiency, summed capacity and member components.*
+
 ---
 
 ## Installation
